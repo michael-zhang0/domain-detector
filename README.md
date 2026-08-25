@@ -18,8 +18,8 @@ Opening the domain takes **both** of these together:
 
 - **Throw the sign** — index and middle extended on both hands, fingertips pressed together, wrists
   apart.
-- **Say the incantation** — 領域展開・伏魔御廚子 (*ryōiki tenkai, fukuma mizushi*). Either half of
-  the line is recognised on its own.
+- **Say the whole incantation** — 領域展開・伏魔御廚子 (*ryōiki tenkai, fukuma mizushi*). Both
+  halves are required; neither counts on its own.
 
 They do not have to land at the same instant. Each is remembered for 5 seconds, so signing then
 speaking works as well as speaking then signing, and holding the sign while you say the line is
@@ -58,8 +58,12 @@ microphone audio is streamed to Google's servers for transcription. Set `VOICE_E
 the top of [main.js](js/main.js) to switch it off entirely; the gesture still works. Chrome and Edge
 only; elsewhere the app silently falls back to gesture-only.
 
-Recognition runs in `ja-JP`. Accepted spellings — kanji, kana, and romaji — are listed in `PHRASES`
-in [voice.js](js/voice.js) and pinned by `test/voice.test.mjs`.
+Recognition runs in `ja-JP`. Accepted spellings — kanji, kana, and romaji — are listed as `OPENING`
+and `NAME` in [voice.js](js/voice.js) and pinned by `test/voice.test.mjs`.
+
+The two halves rarely arrive in one transcript: an utterance usually produces several results as it
+firms up, so each half is remembered for 6 seconds (`HALF_WINDOW_MS`) and the trigger fires when
+both are current. Saying them in either order works; saying one and stopping does not.
 
 ## How it fits together
 

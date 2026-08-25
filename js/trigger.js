@@ -1,16 +1,24 @@
-// Pairing for the two activation triggers.
+// Pairing for things that must happen together but never arrive together.
 //
-// The sign and the incantation almost never land on the same frame: speech
-// results arrive a beat behind the words, and you might sign first or speak
-// first. So each half is remembered with a timestamp and counts as satisfied
-// for a window afterwards. Kept free of DOM and timers so it can be tested.
+// Used twice: for the sign against the incantation, and inside voice.js for the
+// two halves of the incantation itself. In both cases the parts land at
+// different moments — speech results trail the words, and you might sign before
+// speaking or after — so each part is remembered with a timestamp and counts as
+// satisfied for a window afterwards. Free of DOM and timers so it can be tested.
 
 export class TriggerPairing {
   #windowMs;
-  #at = { sign: -Infinity, voice: -Infinity };
+  #keys;
+  #at;
 
-  constructor(windowMs) {
+  /**
+   * @param {number} windowMs   how long each part stays satisfied
+   * @param {string[]} keys     names of the parts being paired
+   */
+  constructor(windowMs, keys = ["sign", "voice"]) {
     this.#windowMs = windowMs;
+    this.#keys = keys;
+    this.#at = Object.fromEntries(keys.map((k) => [k, -Infinity]));
   }
 
   /** Record that one half just happened. */
@@ -18,10 +26,9 @@ export class TriggerPairing {
     this.#at[which] = now;
   }
 
-  /** Forget both — used on activation and on reset, so nothing carries over. */
+  /** Forget every part — used on activation and reset, so nothing carries over. */
   clear() {
-    this.#at.sign = -Infinity;
-    this.#at.voice = -Infinity;
+    for (const k of this.#keys) this.#at[k] = -Infinity;
   }
 
   /** @returns {boolean} whether that half happened recently enough to count. */
@@ -36,11 +43,10 @@ export class TriggerPairing {
   }
 
   /**
-   * @param {boolean} requireBoth  both halves, or either one alone
+   * @param {boolean} requireAll  every part, or any one alone
    */
-  ready(now, requireBoth) {
-    const sign = this.isCurrent("sign", now);
-    const voice = this.isCurrent("voice", now);
-    return requireBoth ? sign && voice : sign || voice;
+  ready(now, requireAll) {
+    const current = this.#keys.map((k) => this.isCurrent(k, now));
+    return requireAll ? current.every(Boolean) : current.some(Boolean);
   }
 }

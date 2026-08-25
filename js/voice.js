@@ -7,27 +7,35 @@
 // Chrome only. Firefox and Safari have no usable implementation, in which case
 // `supported` is false and the caller falls back to the gesture alone.
 
+import { TriggerPairing } from "./trigger.js";
+
 // globalThis rather than window so the phrase matcher can be imported and
 // tested outside a browser.
 const SpeechRecognition = globalThis.SpeechRecognition ?? globalThis.webkitSpeechRecognition;
 
-// Matched against the normalised transcript. Recognition rarely returns the
-// full line cleanly, so the distinctive fragments are listed separately and any
-// one of them is enough.
-const PHRASES = [
-  // 領域展開 — ryōiki tenkai
+// The line is 領域展開・伏魔御廚子, and both halves are required. Each half has
+// several accepted spellings because recognition returns kanji, kana, or romaji
+// depending on how it hears you, and mishears predictable syllables.
+const OPENING = [
   "領域展開",
   "りょういきてんかい",
   "ryoikitenkai",
   "ryouikitenkai",
   "ryoikitengai",
-  // 伏魔御廚子 — fukuma mizushi (both kanji variants of the last character)
-  "伏魔御廚子",
+];
+
+const NAME = [
+  "伏魔御廚子", // the 廚 and 厨 variants of the last character both appear
   "伏魔御厨子",
   "ふくまみずし",
   "fukumamizushi",
   "fukumamizuchi",
 ];
+
+// How long one half waits for the other. The full line takes a couple of
+// seconds to say and recognition trails it, so this is generous — but it is not
+// unbounded, or half a line said a minute ago would still count.
+const HALF_WINDOW_MS = 6000;
 
 /** Fold katakana to hiragana and drop everything that is not a word character. */
 export function normalise(text) {
@@ -37,10 +45,22 @@ export function normalise(text) {
     .replace(/[\s　.,!?、。・「」ー-]/g, "");
 }
 
-/** Exported for tests — recognition output is hard to predict, so pin it down. */
-export function matchesIncantation(transcript) {
+/**
+ * Which halves of the incantation appear in one transcript.
+ * @returns {{opening: boolean, name: boolean}}
+ */
+export function halvesIn(transcript) {
   const text = normalise(transcript);
-  return PHRASES.some((p) => text.includes(p));
+  return {
+    opening: OPENING.some((p) => text.includes(p)),
+    name: NAME.some((p) => text.includes(p)),
+  };
+}
+
+/** Whether a single transcript contains the whole line. Exported for tests. */
+export function matchesIncantation(transcript) {
+  const { opening, name } = halvesIn(transcript);
+  return opening && name;
 }
 
 export class VoiceTrigger {
@@ -48,9 +68,13 @@ export class VoiceTrigger {
   #onMatch;
   #running = false;
   #lastFiredAt = 0;
+  // The halves often arrive in separate results — an interim for the first
+  // words, then another as the rest firms up — so they are accumulated rather
+  // than required in one transcript.
+  #heard = new TriggerPairing(HALF_WINDOW_MS, ["opening", "name"]);
 
   /**
-   * @param {() => void} onMatch  called when the incantation is heard
+   * @param {() => void} onMatch  called when the whole incantation is heard
    * @param {string} lang         recognition language; the line is Japanese
    */
   constructor(onMatch, lang = "ja-JP") {
@@ -100,13 +124,19 @@ export class VoiceTrigger {
   }
 
   #test(transcript) {
-    if (!matchesIncantation(transcript)) return false;
+    const now = performance.now();
+    const { opening, name } = halvesIn(transcript);
+    if (opening) this.#heard.note("opening", now);
+    if (name) this.#heard.note("name", now);
+
+    if (!this.#heard.ready(now, true)) return false;
 
     // Interim results repeat the same words as they firm up, so one utterance
     // would otherwise fire several times.
-    const now = performance.now();
     if (now - this.#lastFiredAt < 2500) return true;
     this.#lastFiredAt = now;
+    // Next activation has to hear the whole line again.
+    this.#heard.clear();
     this.#onMatch();
     return true;
   }
@@ -124,6 +154,7 @@ export class VoiceTrigger {
   stop() {
     if (!this.#recognition) return;
     this.#running = false;
+    this.#heard.clear();
     this.#recognition.stop();
   }
 }

@@ -96,5 +96,34 @@ function check(name, got, want) {
   check("noted but expired is not current", p.isCurrent("sign", 9999), false);
 }
 
+// --- custom keys, as voice.js uses for the two halves of the line ----------
+
+{
+  const p = new TriggerPairing(6000, ["opening", "name"]);
+  check("halves: neither heard", p.ready(0, BOTH), false);
+  p.note("opening", 0);
+  check("halves: opening alone is not the line", p.ready(0, BOTH), false);
+  p.note("name", 2000);
+  check("halves: name completes the line", p.ready(2000, BOTH), true);
+
+  const q = new TriggerPairing(6000, ["opening", "name"]);
+  q.note("name", 0);
+  q.note("opening", 1500);
+  check("halves: spoken in reverse still counts", q.ready(1500, BOTH), true);
+
+  const r = new TriggerPairing(6000, ["opening", "name"]);
+  r.note("opening", 0);
+  r.note("name", 7000); // first half long expired
+  check("halves: too far apart do not count", r.ready(7000, BOTH), false);
+
+  const s = new TriggerPairing(6000, ["opening", "name"]);
+  s.note("opening", 0);
+  s.note("name", 0);
+  s.clear();
+  check("halves: cleared after firing", s.ready(0, BOTH), false);
+  s.note("opening", 100);
+  check("halves: leftover half cannot refire", s.ready(100, BOTH), false);
+}
+
 console.log(failures ? `\n${failures} failing` : "\nall passing");
 process.exit(failures ? 1 : 0);
