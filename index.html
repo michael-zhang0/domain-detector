@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Domain Detector — Malevolent Shrine</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="stage">
+    <!-- Source frames. Hidden: everything the user sees goes through the canvas. -->
+    <video id="cam" playsinline muted></video>
+    <canvas id="out"></canvas>
+
+    <!-- Glyph rather than a word, to keep the screen free of text. -->
+    <button id="reset" hidden aria-label="Reset the domain" title="Reset">&#8635;</button>
+
+    <div id="boot">
+      <p id="boot-msg">Loading models…</p>
+      <button id="start" hidden>Enable camera</button>
+    </div>
+
+    <div id="debug" hidden>
+      <div class="row"><span>fps</span><b id="d-fps">–</b></div>
+      <div class="row"><span>hands</span><b id="d-hands">0</b></div>
+      <div class="row"><span>state</span><b id="d-state">idle</b></div>
+      <div class="row"><span>seg</span><b id="d-seg">off</b></div>
+      <div class="row"><span>trigger</span><b id="d-mode">–</b></div>
+      <div class="row"><span>sign</span><b id="d-sign">–</b></div>
+      <div class="row"><span>voice</span><b id="d-voice">–</b></div>
+      <hr>
+      <div id="d-checks"></div>
+      <hr>
+      <div class="hint">D toggles this panel · R force-releases the domain</div>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+# Domain art and audio.
+#
+# These are sourced separately and are not ours to redistribute — the shrine and
+# its cue are generated at runtime precisely so the repo does not need them. Drop
+# your own files in assets/ and they take over locally without being committed.
+# See assets/README.md for the expected filenames.
+assets/*
+!assets/README.md
+
+node_modules/
+
+# Windows / editor noise
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/

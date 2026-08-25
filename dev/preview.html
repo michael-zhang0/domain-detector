@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Domain Detector — render preview</title>
+  <style>
+    body { margin: 0; background: #0b0b0e; color: #ddd; font: 13px/1.5 system-ui, sans-serif; }
+    main { display: grid; place-items: center; gap: 12px; padding: 16px; }
+    canvas { max-width: 96vw; max-height: 78vh; }
+    .bar { display: flex; gap: 14px; align-items: center; }
+    button { background: #1b1b21; color: #eee; border: 1px solid #3a3a44; padding: 6px 14px; cursor: pointer; }
+    p { color: #888; max-width: 70ch; text-align: center; }
+  </style>
+</head>
+<body>
+  <main>
+    <canvas id="out"></canvas>
+    <div class="bar">
+      <button id="flash">Replay activation</button>
+      <label>charge <input id="charge" type="range" min="0" max="100" value="100"></label>
+    </div>
+    <p>
+      Stand-in for the webcam: a synthetic figure and a matching mask drive the real
+      Compositor and MalevolentShrine. Lets you iterate on the domain art and the
+      cutout grading without a camera. Not part of the app.
+    </p>
+  </main>
+
+  <script type="module">
+    import { Compositor } from "../js/compositor.js";
+    import { MalevolentShrine } from "../js/backgrounds/malevolent-shrine.js";
+
+    const W = 1280, H = 720;
+    const compositor = new Compositor(document.getElementById("out"));
+    compositor.resize(W, H);
+    const shrine = new MalevolentShrine();
+
+    // Fake camera frame: flat room, figure in the middle.
+    const cam = Object.assign(document.createElement("canvas"), { width: W, height: H });
+    const mask = Object.assign(document.createElement("canvas"), { width: 256, height: 144 });
+
+    function figure(ctx, w, h, fill) {
+      const cx = w / 2;
+      ctx.fillStyle = fill;
+      ctx.beginPath();
+      ctx.arc(cx, h * 0.26, h * 0.11, 0, Math.PI * 2);      // head
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(cx - h * 0.2, h);
+      ctx.quadraticCurveTo(cx - h * 0.19, h * 0.42, cx, h * 0.4);
+      ctx.quadraticCurveTo(cx + h * 0.19, h * 0.42, cx + h * 0.2, h);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();                                       // hands up near centre
+      ctx.arc(cx - h * 0.06, h * 0.5, h * 0.05, 0, Math.PI * 2);
+      ctx.arc(cx + h * 0.06, h * 0.5, h * 0.05, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    {
+      const c = cam.getContext("2d");
+      const g = c.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, "#4a4f58");
+      g.addColorStop(1, "#23262b");
+      c.fillStyle = g;
+      c.fillRect(0, 0, W, H);
+      figure(c, W, H, "#c9a58b");
+
+      const m = mask.getContext("2d");
+      m.clearRect(0, 0, mask.width, mask.height);
+      figure(m, mask.width, mask.height, "#fff");
+    }
+
+    let flashAt = performance.now();
+    document.getElementById("flash").onclick = () => (flashAt = performance.now());
+    const charge = document.getElementById("charge");
+
+    (function frame(t) {
+      requestAnimationFrame(frame);
+      const k = charge.valueAsNumber / 100;
+      if (k < 1) {
+        compositor.drawCharge(cam, k);
+      } else {
+        compositor.drawDomain(cam, mask, shrine, t, Math.max(0, 1 - (t - flashAt) / 550));
+      }
+    })(performance.now());
+  </script>
+</body>
+</html>
