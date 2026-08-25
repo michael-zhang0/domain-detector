@@ -2,6 +2,10 @@
 
 Throw Sukuna's hand sign at your webcam and the room behind you becomes the Malevolent Shrine.
 
+Adding more in the future
+
+Side project built with Claude for fun
+
 ## Run it
 
 ```bash
