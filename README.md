@@ -5,12 +5,24 @@ Throw Sukuna's hand sign at your webcam and the room behind you becomes the Male
 ## Run it
 
 ```bash
-node serve.mjs
+git clone https://github.com/michael-zhang0/domain-detector.git
 ```
 
-Then open <http://localhost:8080> and click **Enable camera**. Serving matters — `getUserMedia`
-needs a secure context, and `file://` is not one. No build step, no dependencies; the MediaPipe
-models come from a CDN on first load, so the first run needs a network connection.
+```bash
+cd domain-detector && node serve.mjs
+```
+
+Then open <http://localhost:8080> and click **Enable camera**.
+
+Requires Node (any recent version) and Chrome or Edge. There is nothing to install — no build step,
+no dependencies, no `npm install`. The MediaPipe models are fetched from a CDN on first load, so the
+first run needs a network connection.
+
+Serving matters: `getUserMedia` needs a secure context, and `file://` is not one. Opening
+`index.html` by double-clicking will not get you a camera.
+
+A fresh clone runs with an empty `assets/` folder — the shrine is drawn and the audio synthesised at
+runtime. Supplying your own files is optional; see [using your own art and audio](#using-your-own-art-and-audio).
 
 ## Using it
 

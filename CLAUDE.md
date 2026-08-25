@@ -118,6 +118,9 @@ need a human in front of the camera.
   out to avoid sync locking `node_modules`. Note that Explorer's "Documents" shortcut still points
   at the OneDrive folder, so navigate by full path.
 - Windows 11, PowerShell 5.1 primary shell.
-- Not a git repo yet — `git init` when there's something to commit.
+- Git repo on `main`, pushed to https://github.com/michael-zhang0/domain-detector.
+- `assets/` is gitignored apart from its README. Local art and audio live there and must **stay**
+  out of commits — the sourced material is copyrighted, and a media file committed once survives in
+  history even after deletion. Check `git diff --cached --name-only` before committing if in doubt.
 - Webcam access needs a secure context: `localhost` is fine, `file://` is not. Serve it, don't
   double-click the HTML.
