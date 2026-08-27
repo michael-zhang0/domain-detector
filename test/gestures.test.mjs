@@ -158,6 +158,17 @@ report("...and one hand is not the Shrine either", [shrinePose()[0]], matchMalev
 // And the reverse: two crossed-finger hands are not a Shrine sign.
 report("two Void hands are not the Shrine", [voidPose()[0], voidPose()[0]], matchMalevolentShrine, false);
 
+// The Void must not depend on hand count. MediaPipe's count flickers between
+// one and two as a second hand drifts in and out of confidence; gating on it
+// made the domain unopenable in practice. Exclusivity comes from the fingers.
+{
+  const idle = lm(hand({ wrist: [0.15 * ASPECT, 0.8], dir: [0, -1], size: SIZE, extended: OPEN }));
+  const fist = lm(hand({ wrist: [0.15 * ASPECT, 0.8], dir: [0, -1], size: SIZE, extended: [] }));
+  report("Void fires with an idle hand also in frame", [voidPose()[0], idle], matchUnlimitedVoid, true);
+  report("Void fires with a fist also in frame", [fist, voidPose()[0]], matchUnlimitedVoid, true);
+  report("...and neither combination is the Shrine", [voidPose()[0], idle], matchMalevolentShrine, false);
+}
+
 // ---- noise ----------------------------------------------------------------
 
 let seed = 42;

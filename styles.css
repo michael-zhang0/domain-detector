@@ -144,6 +144,7 @@ html, body {
 
 #debug .check.pass span { color: #6ee7a8; }
 #debug .check.fail span { color: #6d6560; }
+#debug .check b { color: #6d6560; font-weight: 400; }
 
 #debug .legend,
 #debug .check-head {

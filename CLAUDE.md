@@ -82,20 +82,24 @@ servers while listening, so `VOICE_ENABLED` in `main.js` turns it off. The phras
 and exported, tested in `test/voice.test.mjs` — recognition output varies enough (kanji vs kana,
 spacing, mishearings) that the accepted forms are worth pinning down.
 
-**Domains must be mutually exclusive, and that is the hard constraint.** *(settled)* The two signs
-are separated twice over, and keeping both separations is deliberate:
+**Domains must be mutually exclusive, and the discriminator is the finger pattern only.** *(settled)*
+The Shrine raises middle + ring; the Void raises index + middle, crossed. A Shrine hand curls the
+index, which the Void requires extended, so neither can satisfy the other.
 
-- **Hand count.** The Void requires `hands.length === 1`, the Shrine `>= 2`.
-- **Finger pattern.** The Shrine raises middle + ring; the Void raises index + middle, crossed.
+**Do not gate on hand count.** An earlier version required `hands.length === 1` for the Void as a
+second discriminator, and it broke the app in the field: MediaPipe's hand count flickers between one
+and two as a second hand drifts in and out of confidence, which reset the confirm counter before it
+could reach `CONFIRM_FRAMES` (so nothing ever fired) and flipped the debug panel between domains
+every few frames (so it looked like the app was switching by itself). The Void now scans every hand
+and takes the best. The Shrine genuinely needs two, which is fine — that is a lower bound, not an
+equality.
 
-Either alone would suffice; having both means a dropped hand or one misread finger cannot make one
-domain fire as the other. A lone Shrine hand currently fails the Void on three separate checks.
+`CONFIRM_TOLERANCE` exists for the same reason: a held sign that MediaPipe loses for a frame or two
+is still being held, and both signs occlude fingers by design.
 
-The gesture tests assert each pose is *rejected* by the other's matcher, in both directions. A third
-domain needs the same treatment: pick a discriminator, then test the rejection, not just the match.
-
-Consequence worth remembering: the Void cannot fire while a second hand is visible. That is inherent
-to the hand-count discriminator, not a bug to be fixed.
+The gesture tests assert each pose is *rejected* by the other's matcher in both directions, and that
+the Void still fires with a second hand in frame. A third domain needs the same treatment: pick a
+discriminator, then test the rejection, not just the match.
 
 **Crossing is detected by order, not position.** *(settled)* Along the knuckle line the index sits
 before the middle; crossing swaps the *fingertips* while the knuckles stay put, so comparing the two

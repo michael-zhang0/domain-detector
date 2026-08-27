@@ -107,6 +107,31 @@ function alongAxis(p, axis, aspect) {
 }
 
 /**
+ * Raw measurements for one hand, for the debug panel.
+ *
+ * The thresholds in TUNING were set against synthetic landmarks, which is
+ * circular — real hands are the only real evidence. This exposes the numbers
+ * live so a pose that will not fire can be diagnosed from what the camera
+ * actually sees rather than from a guess.
+ */
+export function describeHand(lm, aspect) {
+  const scale = handScale(lm, aspect);
+  const axis = knuckleAxis(lm, aspect);
+  const tip = midpoint(lm[FINGERS.index.tip], lm[FINGERS.middle.tip]);
+  const reach = dist(lm[WRIST], tip, aspect);
+  return {
+    index: extensionRatio(lm, "index", aspect),
+    middle: extensionRatio(lm, "middle", aspect),
+    ring: extensionRatio(lm, "ring", aspect),
+    pinky: extensionRatio(lm, "pinky", aspect),
+    cross:
+      (alongAxis(lm[FINGERS.index.tip], axis, aspect) -
+        alongAxis(lm[FINGERS.middle.tip], axis, aspect)) / scale,
+    up: reach > 1e-6 ? (lm[WRIST].y - tip.y) / reach : 0,
+  };
+}
+
+/**
  * Evaluate the Malevolent Shrine pose.
  *
  * @param {{x:number,y:number}[][]} hands  normalised landmark sets
@@ -161,14 +186,9 @@ export function matchMalevolentShrine(hands, aspect) {
  * @param {number} aspect                  video width / height
  * @returns {{match: boolean, checks: {name: string, pass: boolean}[]}}
  */
-export function matchUnlimitedVoid(hands, aspect) {
+function voidOnHand(lm, aspect) {
   const checks = [];
   const add = (name, pass) => (checks.push({ name, pass }), pass);
-
-  // Exactly one, not "at least one": a second hand in frame means the Shrine.
-  if (!add("exactly one hand", hands.length === 1)) return { match: false, checks };
-
-  const lm = hands[0];
   const scale = handScale(lm, aspect);
 
   add(
@@ -193,4 +213,22 @@ export function matchUnlimitedVoid(hands, aspect) {
   add("fingers pointing up", reach > 1e-6 && rise / reach >= TUNING.pointingUp);
 
   return { match: checks.every((c) => c.pass), checks };
+}
+
+export function matchUnlimitedVoid(hands, aspect) {
+  if (!hands.length) {
+    return { match: false, checks: [{ name: "a hand in frame", pass: false }] };
+  }
+
+  // Any hand will do, and the count is deliberately not checked. MediaPipe's
+  // hand count flickers between one and two as a second hand drifts in and out
+  // of confidence; gating on it made the domain unopenable and made the debug
+  // panel appear to switch between domains every few frames.
+  //
+  // It is safe to drop because the finger patterns already separate the two:
+  // the Shrine curls the index, this needs it extended, so a Shrine hand can
+  // never satisfy the check below. Keep that true if either sign changes again.
+  return hands
+    .map((lm) => voidOnHand(lm, aspect))
+    .sort((a, b) => b.checks.filter((c) => c.pass).length - a.checks.filter((c) => c.pass).length)[0];
 }

@@ -8,12 +8,18 @@ import { VoiceTrigger } from "./voice.js";
 import { TriggerPairing } from "./trigger.js";
 import { DomainAudio } from "./audio.js";
 import { DOMAINS, domainById } from "./domains.js";
+import { describeHand, TUNING } from "./gestures.js";
 
 // Activation fires the instant a sign is recognised. CONFIRM_FRAMES is not a
 // charge-up — it is noise rejection, three frames at ~60fps being about 50ms,
 // short enough to feel immediate but long enough that a single bad landmark
 // frame cannot open a domain on its own.
 const CONFIRM_FRAMES = 3;
+// Tracking is not perfect: MediaPipe drops a hand for a frame or two all the
+// time, especially when fingers occlude each other — which both of these signs
+// do by design. Without this, one dropped frame restarts the count and a
+// perfectly good held sign never accumulates enough to fire.
+const CONFIRM_TOLERANCE = 5;
 const FLASH_MS = 550;
 
 // Once open, the domain stays open. The only way out is the reset button, which
@@ -44,6 +50,7 @@ const state = {
   domain: null,          // the open domain, or null
   confirmFor: null,      // which domain the confirm frames are counting toward
   confirmFrames: 0,
+  missFrames: 0,         // consecutive frames with no match, forgiven up to a point
   activatedAt: -Infinity,
   fps: 0,
   segEveryNth: 1,
@@ -144,10 +151,15 @@ async function openCamera() {
 
 function updateActivation(domain, now) {
   if (!domain) {
-    state.confirmFrames = 0;
-    state.confirmFor = null;
+    // Forgive a short gap rather than restarting: a held sign that MediaPipe
+    // loses for a frame is still being held.
+    if (++state.missFrames > CONFIRM_TOLERANCE) {
+      state.confirmFrames = 0;
+      state.confirmFor = null;
+    }
     return;
   }
+  state.missFrames = 0;
   // Switching poses restarts the count rather than inheriting the other one's.
   if (state.confirmFor !== domain.id) {
     state.confirmFor = domain.id;
@@ -263,15 +275,15 @@ function loop(now) {
     compositor.drawCamera(video);
   }
 
-  updateHud(landmarks.length, results, segmented);
+  updateHud(landmarks, results, segmented);
 }
 
 // ---- HUD -------------------------------------------------------------------
 
-function updateHud(handCount, results, segmented) {
+function updateHud(landmarks, results, segmented) {
   if (!state.showDebug) return;
   el("d-fps").textContent = state.fps.toFixed(0);
-  el("d-hands").textContent = handCount;
+  el("d-hands").textContent = landmarks.length;
   el("d-seg").textContent = segmented ? "1/" + state.segEveryNth : "off";
   el("d-state").textContent = state.domain ? state.domain.label.toUpperCase() : "idle";
 
@@ -286,17 +298,39 @@ function updateHud(handCount, results, segmented) {
     return `<div class="row"><span>${d.label}</span><b>${half("sign")} / ${voiceHalf}</b></div>`;
   }).join("");
 
-  // Whichever pose is closest to matching is the one worth tuning against.
-  const closest = results
-    .map((r) => ({ ...r, score: r.checks.filter((c) => c.pass).length }))
-    .sort((a, b) => b.score - a.score)[0];
-  el("d-checks").innerHTML = closest
-    ? `<div class="check-head">${closest.domain.label}</div>` +
-      closest.checks
-        .map((c) => '<div class="check ' + (c.pass ? "pass" : "fail") +
-          '"><span>' + (c.pass ? "✓" : "·") + " " + c.name + "</span></div>")
-        .join("")
-    : "";
+  // Both domains, always. Showing only the closest one made the panel flip
+  // between them whenever the hand count wobbled, which read as the app
+  // switching domains by itself.
+  el("d-checks").innerHTML = results
+    .map(
+      (r) =>
+        `<div class="check-head">${r.domain.label}</div>` +
+        r.checks
+          .map((c) => '<div class="check ' + (c.pass ? "pass" : "fail") +
+            '"><span>' + (c.pass ? "✓" : "·") + " " + c.name + "</span></div>")
+          .join(""),
+    )
+    .join("");
+
+  // Raw numbers for the largest hand, against the thresholds they are tested
+  // for. TUNING was set against synthetic landmarks, so these are the only real
+  // evidence about what a real hand in front of a real camera measures.
+  const hand = landmarks[0];
+  el("d-raw").innerHTML = hand
+    ? (() => {
+        const m = describeHand(hand, video.videoWidth / video.videoHeight);
+        const row = (name, value, ok, want) =>
+          `<div class="check ${ok ? "pass" : "fail"}"><span>${name} ${value.toFixed(2)}</span><b>${want}</b></div>`;
+        return [
+          row("index", m.index, m.index >= TUNING.extendedRatio, "up≥" + TUNING.extendedRatio),
+          row("middle", m.middle, m.middle >= TUNING.extendedRatio, "up≥" + TUNING.extendedRatio),
+          row("ring", m.ring, m.ring >= TUNING.extendedRatio, "up≥" + TUNING.extendedRatio),
+          row("pinky", m.pinky, m.pinky <= TUNING.curledRatio, "down≤" + TUNING.curledRatio),
+          row("cross", m.cross, m.cross >= TUNING.crossOver, "≥" + TUNING.crossOver),
+          row("up", m.up, m.up >= TUNING.pointingUp, "≥" + TUNING.pointingUp),
+        ].join("");
+      })()
+    : '<div class="legend">no hand</div>';
 }
 
 el("reset").addEventListener("click", reset);
