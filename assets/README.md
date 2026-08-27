@@ -4,14 +4,20 @@ Optional. Drop files here with these exact names and they replace the generated
 art and audio. Each is picked up independently — anything missing falls back to
 the procedural version, so this folder can stay empty.
 
+Every domain takes the same three slots, named after its id — `malevolent-shrine`
+or `unlimited-void`:
+
 | Filename | What it does |
 |---|---|
-| `malevolent-shrine-cue.mp3` | plays once, on activation — replaces the synthesised hit |
-| `malevolent-shrine-bed.mp3` | loops while the domain is open, cut on reset |
-| `malevolent-shrine.mp4` | looping background video — replaces the drawn shrine |
+| `<id>-cue.mp3` | plays once, on activation — replaces the synthesised hit |
+| `<id>-bed.mp3` | loops while the domain is open, cut on reset |
+| `<id>.mp4` | looping background video — replaces the drawn art |
+
+So `unlimited-void-cue.mp3` is Gojo's activation sound, and supplying one
+domain's files does not affect the other's.
 
 The names must match exactly, or the app will not find them. To use different
-names or formats, edit `ASSETS` at the top of `../js/main.js`.
+names or formats, edit the `assets` block for that domain in `../js/domains.js`.
 
 `.wav`, `.ogg`, and `.m4a` decode fine — the browser reads the file itself, not
 the extension. But the path in `ASSETS` has to match whatever you name it, and

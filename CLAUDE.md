@@ -4,9 +4,14 @@ Real-time computer vision toy: detect hand gestures from a webcam, match them ag
 Jujutsu Kaisen domain expansion hand signs, and when one fires, replace the background with that
 domain's animated art and play its audio cue — so it looks like you actually activated the domain.
 
-Status: **one domain working end to end** as of 2026-08-24 — Sukuna's Malevolent Shrine, all four
-stages. See README.md for how to run it and what each file does. Everything below is still the
-plan of record; the sections marked *(settled)* record what building the first slice decided.
+Status: **two domains working end to end** as of 2026-08-26 — Sukuna's Malevolent Shrine and Gojo's
+Unlimited Void, all four stages, pushed to GitHub. See README.md for how to run it and what each
+file does. Everything below is still the plan of record; the sections marked *(settled)* record what
+building it decided.
+
+Adding a third domain means one entry in `js/domains.js` (pose matcher, naming phrases, background
+factory, audio profile, asset paths) plus its matcher and background. `main.js` walks the roster and
+knows nothing about any particular domain — keep it that way.
 
 ## Pipeline (the whole app in four stages)
 
@@ -76,6 +81,20 @@ Voice is Chrome's `SpeechRecognition` only, and it is **not on-device** — audi
 servers while listening, so `VOICE_ENABLED` in `main.js` turns it off. The phrase matcher is pure
 and exported, tested in `test/voice.test.mjs` — recognition output varies enough (kanji vs kana,
 spacing, mishearings) that the accepted forms are worth pinning down.
+
+**Domains must be mutually exclusive, and that is the hard constraint.** *(settled)* Both signs are
+two-handed and fingertip-to-fingertip, so a loose threshold makes both fire on the same pose. The
+middle finger separates them — extended for the Shrine, folded for the Void — and the gesture tests
+assert each pose is *rejected* by the other's matcher. A third domain needs the same treatment:
+pick a discriminator, then test the rejection, not just the match.
+
+Same for the incantations: `test/voice.test.mjs` checks no phrase belongs to two domains.
+
+**Tune thresholds against measured distributions, not plausibility.** *(settled)* The thumb bar was
+set to 1.12 because it looked sensible; measurement showed an extended thumb runs 1.01–1.36 under
+noise, so the bar sat inside the range it was meant to accept and silently cost a quarter of the
+frames. A folded thumb tops out near 0.82, so 0.95 sits in the empty band. When a pose matches but
+only sometimes, measure the per-check failure counts before touching anything.
 
 **The whole line is required, not half of it.** *(settled)* 領域展開 and 伏魔御廚子 are matched as
 two separate groups and both must be heard. They almost never land in one transcript — an utterance

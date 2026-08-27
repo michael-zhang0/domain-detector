@@ -21,27 +21,34 @@ export class DomainAudio {
   // Every source currently running, so they can all be stopped on reset.
   // Entries remove themselves when they end on their own.
   #voices = new Set();
-  // Fetched before the context exists (fetching needs no context, decoding
-  // does), then decoded on unlock.
-  #encoded = { cue: null, bed: null };
-  #buffers = { cue: null, bed: null };
+  // Keyed by domain id. Fetched before the context exists (fetching needs no
+  // context, decoding does), then decoded on unlock.
+  #encoded = new Map();
+  #buffers = new Map();
 
   /**
-   * Fetch optional audio files. Safe to call before unlock(); anything that
-   * fails to fetch is simply left to the synthesiser.
-   * @param {{cue?: string, bed?: string}} urls
+   * Fetch optional audio files for every domain. Safe to call before unlock();
+   * anything that fails to fetch is simply left to the synthesiser.
+   * @param {{id: string, assets: {cue?: string, bed?: string}}[]} domains
    */
-  async loadAssets(urls) {
+  async loadAssets(domains) {
     await Promise.all(
-      Object.entries(urls).map(async ([slot, url]) => {
-        if (!url) return;
-        try {
-          const res = await fetch(url);
-          if (!res.ok) return;
-          this.#encoded[slot] = await res.arrayBuffer();
-        } catch {
-          // No file, no problem — the synth path stays in place.
-        }
+      domains.map(async (domain) => {
+        const slots = {};
+        await Promise.all(
+          ["cue", "bed"].map(async (slot) => {
+            const url = domain.assets?.[slot];
+            if (!url) return;
+            try {
+              const res = await fetch(url);
+              if (!res.ok) return;
+              slots[slot] = await res.arrayBuffer();
+            } catch {
+              // No file, no problem — the synth path stays in place.
+            }
+          }),
+        );
+        if (Object.keys(slots).length) this.#encoded.set(domain.id, slots);
       }),
     );
   }
@@ -82,19 +89,22 @@ export class DomainAudio {
     this.#bus = bus;
     this.#noise = noise;
 
-    for (const slot of ["cue", "bed"]) {
-      const raw = this.#encoded[slot];
-      if (!raw) continue;
-      ctx.decodeAudioData(raw)
-        .then((buf) => (this.#buffers[slot] = buf))
-        .catch(() => {});
-      this.#encoded[slot] = null;
+    for (const [id, slots] of this.#encoded) {
+      for (const [slot, raw] of Object.entries(slots)) {
+        ctx.decodeAudioData(raw)
+          .then((buf) => {
+            if (!this.#buffers.has(id)) this.#buffers.set(id, {});
+            this.#buffers.get(id)[slot] = buf;
+          })
+          .catch(() => {});
+      }
     }
+    this.#encoded.clear();
   }
 
-  /** True once a supplied file is decoded and in use for that slot. */
-  has(slot) {
-    return Boolean(this.#buffers[slot]);
+  /** True once a supplied file is decoded and in use for that domain's slot. */
+  has(domainId, slot) {
+    return Boolean(this.#buffers.get(domainId)?.[slot]);
   }
 
   // ---- layers ------------------------------------------------------------
@@ -283,6 +293,101 @@ export class DomainAudio {
     return setInterval(tick, 150);
   }
 
+  // ---- Unlimited Void layers ---------------------------------------------
+  //
+  // The mirror image of the Shrine's: rising instead of falling, sustained
+  // instead of struck, bright instead of low. Opening one domain should never
+  // sound like opening the other, even with your eyes shut.
+
+  /** Filtered noise sweeping upward — an intake of breath. */
+  #shimmer(at) {
+    const ctx = this.#ctx;
+    const band = ctx.createBiquadFilter();
+    band.type = "bandpass";
+    band.Q.value = 2.2;
+    band.frequency.setValueAtTime(320, at);
+    band.frequency.exponentialRampToValueAtTime(7200, at + 1.9);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.linearRampToValueAtTime(0.4, at + 1.5);
+    gain.gain.linearRampToValueAtTime(0.0001, at + 2.4);
+
+    this.#noiseSource(at, at + 2.5).connect(band).connect(gain).connect(this.#bus);
+  }
+
+  /** Low bloom that opens upward, where the Shrine's sub drops away. */
+  #bloom(at) {
+    const ctx = this.#ctx;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(32, at);
+    osc.frequency.exponentialRampToValueAtTime(65, at + 2.2);
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.linearRampToValueAtTime(0.7, at + 1.1);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + 3.4);
+    osc.connect(gain).connect(this.#bus);
+    this.#spawn(osc, at, at + 3.5);
+  }
+
+  /** Struck bell, inharmonic partials, long tail. */
+  #bell(at, freq, level = 0.2) {
+    const ctx = this.#ctx;
+    // Ratios pulled away from whole numbers so it rings rather than hums.
+    for (const [mult, amp, decay] of [[1, 1, 4.2], [2.76, 0.5, 2.6], [5.4, 0.26, 1.5], [8.9, 0.12, 0.9]]) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq * mult;
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.exponentialRampToValueAtTime(level * amp, at + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + decay);
+      osc.connect(gain).connect(this.#bus);
+      this.#spawn(osc, at, at + decay + 0.1);
+    }
+  }
+
+  /** Bed: a high shimmering pad over a distant drone, slowly beating. */
+  #startVoidBed(at) {
+    const ctx = this.#ctx;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(0.11, at + 2.0);
+
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = 180;
+
+    const oscs = [];
+    // Wide, open voicing — fifths and octaves, no third, so it stays cold.
+    for (const freq of [220, 330, 440, 660, 880]) {
+      for (const detune of [-9, 9]) {
+        const o = ctx.createOscillator();
+        o.type = "sine";
+        o.frequency.value = freq;
+        o.detune.value = detune; // the beating between the pair is the shimmer
+        o.connect(hp);
+        this.#spawn(o, at);
+        oscs.push(o);
+      }
+    }
+
+    const drone = ctx.createOscillator();
+    const droneGain = ctx.createGain();
+    drone.type = "triangle";
+    drone.frequency.value = 55;
+    droneGain.gain.setValueAtTime(0.0001, at);
+    droneGain.gain.exponentialRampToValueAtTime(0.5, at + 2.5);
+    drone.connect(droneGain).connect(gain);
+    this.#spawn(drone, at);
+    oscs.push(drone);
+
+    hp.connect(gain).connect(this.#bus);
+    return { gain, oscs };
+  }
+
   #playBuffer(buffer, at, { loop = false } = {}) {
     const ctx = this.#ctx;
     const src = ctx.createBufferSource();
@@ -298,13 +403,24 @@ export class DomainAudio {
 
   // ---- public ------------------------------------------------------------
 
-  /** The cinematic hit, then the bed that sustains under the open domain. */
-  activate() {
+  /**
+   * The cue, then the bed that sustains under the open domain.
+   * @param {{id: string, audioProfile: string}} domain
+   */
+  activate(domain) {
     if (!this.#ctx) return;
     const t = this.#ctx.currentTime + 0.02;
+    const files = this.#buffers.get(domain.id) ?? {};
+    const isVoid = domain.audioProfile === "void";
 
-    if (this.#buffers.cue) {
-      this.#playBuffer(this.#buffers.cue, t);
+    if (files.cue) {
+      this.#playBuffer(files.cue, t);
+    } else if (isVoid) {
+      this.#bloom(t);
+      this.#shimmer(t);
+      this.#bell(t + 1.5, 523.25, 0.22);      // C5
+      this.#bell(t + 1.72, 783.99, 0.16);     // G5
+      this.#bell(t + 2.0, 1046.5, 0.1);       // C6
     } else {
       this.#taiko(t, 1);
       this.#subDrop(t);
@@ -316,9 +432,14 @@ export class DomainAudio {
     }
 
     if (this.#bed) return;
-    if (this.#buffers.bed) {
-      const { src, gain } = this.#playBuffer(this.#buffers.bed, t + 0.4, { loop: true });
+    if (files.bed) {
+      const { src, gain } = this.#playBuffer(files.bed, t + 0.4, { loop: true });
       this.#bed = { gain, timer: null, stop: (at) => src.stop(at) };
+    } else if (isVoid) {
+      // No pulse under the Void — a heartbeat would give it a floor, and the
+      // point of it is that there is not one.
+      const { gain, oscs } = this.#startVoidBed(t + 0.9);
+      this.#bed = { gain, timer: null, stop: (at) => oscs.forEach((o) => o.stop(at)) };
     } else {
       const { gain, oscs } = this.#startChoir(t + 0.42);
       this.#bed = {

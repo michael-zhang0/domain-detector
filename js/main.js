@@ -1,25 +1,15 @@
 // Wiring for the four stages, plus the activation state machine.
 
 import { HandTracker } from "./hand-tracking.js";
-import { matchMalevolentShrine } from "./gestures.js";
 import { PersonSegmenter } from "./segmentation.js";
 import { Compositor } from "./compositor.js";
-import { MalevolentShrine } from "./backgrounds/malevolent-shrine.js";
 import { VideoBackground } from "./backgrounds/video.js";
 import { VoiceTrigger } from "./voice.js";
 import { TriggerPairing } from "./trigger.js";
 import { DomainAudio } from "./audio.js";
+import { DOMAINS, domainById } from "./domains.js";
 
-// Optional. Drop your own files at these paths and they replace the generated
-// art and audio; if a file is absent the procedural version is used instead,
-// so nothing here needs to exist for the app to run.
-const ASSETS = {
-  art: "assets/malevolent-shrine.mp4",
-  cue: "assets/malevolent-shrine-cue.mp3",   // one-shot, on activation
-  bed: "assets/malevolent-shrine-bed.mp3",   // loops while the domain is open
-};
-
-// Activation fires the instant the sign is recognised. CONFIRM_FRAMES is not a
+// Activation fires the instant a sign is recognised. CONFIRM_FRAMES is not a
 // charge-up — it is noise rejection, three frames at ~60fps being about 50ms,
 // short enough to feel immediate but long enough that a single bad landmark
 // frame cannot open a domain on its own.
@@ -38,7 +28,7 @@ const VOICE_ENABLED = true;
 // Require the sign AND the incantation together. They do not have to land on
 // the same frame — speech results arrive a beat behind the words, and you may
 // sign first or speak first — so each is remembered for this long and the
-// domain opens when both are current.
+// domain opens when both are current. Both must name the same domain.
 const REQUIRE_BOTH = true;
 const PAIR_WINDOW_MS = 5000;
 
@@ -50,11 +40,9 @@ const tracker = new HandTracker();
 const segmenter = new PersonSegmenter();
 const audio = new DomainAudio();
 
-// Swapped for a VideoBackground during boot if the art file is there.
-let background = new MalevolentShrine();
-
 const state = {
-  active: false,
+  domain: null,          // the open domain, or null
+  confirmFor: null,      // which domain the confirm frames are counting toward
   confirmFrames: 0,
   activatedAt: -Infinity,
   fps: 0,
@@ -64,17 +52,30 @@ const state = {
   showDebug: false,
 };
 
-const pairing = new TriggerPairing(PAIR_WINDOW_MS);
+// Sign and incantation are paired per domain, so signing one and speaking the
+// other never opens anything.
+const pairings = new Map(DOMAINS.map((d) => [d.id, new TriggerPairing(PAIR_WINDOW_MS)]));
 
-const voice = new VoiceTrigger(() => {
+// Created on first use, or pre-seeded at boot with a VideoBackground when the
+// domain has an art file. Each background pre-renders on its first resize, so
+// there is no reason to build one nobody has opened.
+const backgrounds = new Map();
+
+function backgroundFor(domain) {
+  if (!backgrounds.has(domain.id)) backgrounds.set(domain.id, domain.createBackground());
+  return backgrounds.get(domain.id);
+}
+
+const voice = new VoiceTrigger(DOMAINS, (domainId) => {
   const now = performance.now();
-  pairing.note("voice", now);
-  tryActivate(now);
+  pairings.get(domainId)?.note("voice", now);
+  const domain = domainById(domainId);
+  if (domain) tryActivate(domain, now);
 });
 
 // Requiring both only makes sense if voice can actually happen. With the mic
-// off, unsupported, or denied, this would otherwise make the domain impossible
-// to open at all, so it quietly falls back to the sign alone.
+// off, unsupported, or denied, this would otherwise make every domain
+// impossible to open, so it quietly falls back to the sign alone.
 const bothRequired = () => REQUIRE_BOTH && VOICE_ENABLED && voice.supported && voice.listening;
 
 // ---- boot ------------------------------------------------------------------
@@ -92,13 +93,15 @@ async function boot() {
     return;
   }
 
-  // Optional assets, loaded in parallel. Neither failing is an error.
+  // Optional assets for every domain, loaded in parallel. None of it failing is
+  // an error; each domain falls back to its procedural art and synth cue.
   await Promise.all([
-    new VideoBackground(ASSETS.art)
-      .load()
-      .then((v) => (background = v))
-      .catch(() => {}),
-    audio.loadAssets({ cue: ASSETS.cue, bed: ASSETS.bed }),
+    ...DOMAINS.map((d) =>
+      new VideoBackground(d.assets.art)
+        .load()
+        .then((v) => backgrounds.set(d.id, v))
+        .catch(() => {})),
+    audio.loadAssets(DOMAINS),
   ]);
 
   msg.hidden = true;
@@ -139,53 +142,62 @@ async function openCamera() {
 
 // ---- state machine ---------------------------------------------------------
 
-function updateActivation(matched, now) {
-  if (!matched) {
+function updateActivation(domain, now) {
+  if (!domain) {
     state.confirmFrames = 0;
+    state.confirmFor = null;
     return;
+  }
+  // Switching poses restarts the count rather than inheriting the other one's.
+  if (state.confirmFor !== domain.id) {
+    state.confirmFor = domain.id;
+    state.confirmFrames = 0;
   }
   state.confirmFrames++;
   // Held signs keep refreshing the timestamp, so speaking after signing works
   // just as well as signing after speaking.
   if (state.confirmFrames >= CONFIRM_FRAMES) {
-    pairing.note("sign", now);
-    tryActivate(now);
+    pairings.get(domain.id).note("sign", now);
+    tryActivate(domain, now);
   }
 }
 
-/** Open the domain if everything the current trigger mode asks for is current. */
-function tryActivate(now) {
-  if (state.active) return;
-  if (pairing.ready(now, bothRequired())) activateDomain(now);
+/** Open a domain if everything the current trigger mode asks for is current. */
+function tryActivate(domain, now) {
+  if (state.domain) return;
+  if (pairings.get(domain.id).ready(now, bothRequired())) activateDomain(domain, now);
 }
 
-function activateDomain(now) {
-  if (state.active) return; // already inside; nothing to re-trigger
-  state.active = true;
+function activateDomain(domain, now) {
+  if (state.domain) return; // already inside one; nothing to re-trigger
+  state.domain = domain;
   state.confirmFrames = 0;
+  state.confirmFor = null;
   state.activatedAt = now;
-  pairing.clear();
+  for (const p of pairings.values()) p.clear();
 
   // Only meaningful for a video background — no point decoding frames for a
   // domain nobody is inside.
-  background.setPlaying?.(true);
-  audio.activate();
+  backgroundFor(domain).setPlaying?.(true);
+  audio.activate(domain);
 
   // Stop streaming microphone audio the moment it can no longer do anything.
   voice.stop();
 }
 
 function reset() {
-  if (!state.active) return;
-  state.active = false;
+  if (!state.domain) return;
+  backgroundFor(state.domain).setPlaying?.(false);
+
+  state.domain = null;
   state.confirmFrames = 0;
+  state.confirmFor = null;
   state.activatedAt = -Infinity;
   // Cleared, or a stale half from before the reset could pair with the next one
-  // and reopen the domain immediately.
-  pairing.clear();
+  // and reopen a domain immediately.
+  for (const p of pairings.values()) p.clear();
   state.lastMask = null;
 
-  background.setPlaying?.(false);
   audio.stopAll();
   el("reset").hidden = true;
 
@@ -207,16 +219,20 @@ function loop(now) {
 
   compositor.resize(video.videoWidth, video.videoHeight);
 
-  // While the domain is open nothing can re-trigger it, so hand tracking is
-  // pure waste — skipping it hands the whole GPU budget to segmentation.
+  // While a domain is open nothing can re-trigger it, so hand tracking is pure
+  // waste — skipping it hands the whole GPU budget to segmentation.
   let landmarks = [];
-  let match = false;
-  let checks = [];
-  if (!state.active) {
+  let matched = null;
+  let results = [];
+  if (!state.domain) {
     const aspect = video.videoWidth / video.videoHeight;
     ({ landmarks } = tracker.detect(video, now));
-    ({ match, checks } = matchMalevolentShrine(landmarks, aspect));
-    updateActivation(match, now);
+    for (const domain of DOMAINS) {
+      const result = domain.match(landmarks, aspect);
+      results.push({ domain, ...result });
+      if (result.match) matched = domain;
+    }
+    updateActivation(matched, now);
   } else if (now - state.activatedAt >= RESET_AFTER_MS && el("reset").hidden) {
     // Guarded: this branch runs every frame, and rewriting `hidden` would be a
     // pointless DOM write 60 times a second.
@@ -224,9 +240,9 @@ function loop(now) {
   }
 
   // Segmentation is the expensive half, so it only runs when its output is
-  // about to be visible: while the domain is open, and on the frames where the
-  // sign is showing, so a mask is already warm the instant it opens.
-  const wantsMask = state.active || match;
+  // about to be visible: while a domain is open, and on the frames where a sign
+  // is showing, so a mask is already warm the instant it opens.
+  const wantsMask = Boolean(state.domain) || Boolean(matched);
   let segmented = false;
   if (wantsMask && state.frame % state.segEveryNth === 0) {
     const mask = segmenter.segment(video, now);
@@ -237,40 +253,47 @@ function loop(now) {
   // other frame before touching mask quality.
   if (wantsMask) state.segEveryNth = state.fps < 24 ? 2 : 1;
 
-  const flash = Math.max(0, 1 - (now - state.activatedAt) / FLASH_MS);
-
-  if (state.active) {
-    compositor.drawDomain(video, state.lastMask, background, now, flash);
+  if (state.domain) {
+    const flash = Math.max(0, 1 - (now - state.activatedAt) / FLASH_MS);
+    compositor.drawDomain(video, state.lastMask, backgroundFor(state.domain), now, flash);
   } else {
     compositor.drawCamera(video);
   }
 
-  updateHud(landmarks.length, checks, segmented);
+  updateHud(landmarks.length, results, segmented);
 }
 
 // ---- HUD -------------------------------------------------------------------
 
-function updateHud(handCount, checks, segmented) {
+function updateHud(handCount, results, segmented) {
   if (!state.showDebug) return;
   el("d-fps").textContent = state.fps.toFixed(0);
   el("d-hands").textContent = handCount;
-  el("d-state").textContent = state.active ? "ACTIVE" : "idle";
-
-  // With two conditions to line up, knowing which half is missing is the whole
-  // point of the panel.
-  const now = performance.now();
-  const age = (which) =>
-    pairing.isUnset(which) ? "–" : pairing.isCurrent(which, now) ? "OK" : "stale";
-  el("d-mode").textContent = bothRequired() ? "sign+voice" : "either";
-  el("d-sign").textContent = age("sign");
-  el("d-voice").textContent = voice.supported
-    ? voice.listening ? age("voice") : "off"
-    : "n/a";
   el("d-seg").textContent = segmented ? "1/" + state.segEveryNth : "off";
-  el("d-checks").innerHTML = checks
-    .map((c) => '<div class="check ' + (c.pass ? "pass" : "fail") +
-      '"><span>' + (c.pass ? "✓" : "·") + " " + c.name + "</span></div>")
-    .join("");
+  el("d-state").textContent = state.domain ? state.domain.label.toUpperCase() : "idle";
+
+  const now = performance.now();
+  el("d-mode").textContent = bothRequired() ? "sign+voice" : "either";
+
+  // Per domain: whether each half of its trigger is currently satisfied.
+  el("d-triggers").innerHTML = DOMAINS.map((d) => {
+    const p = pairings.get(d.id);
+    const half = (k) => (p.isUnset(k) ? "·" : p.isCurrent(k, now) ? "OK" : "old");
+    const voiceHalf = voice.supported ? (voice.listening ? half("voice") : "off") : "n/a";
+    return `<div class="row"><span>${d.label}</span><b>${half("sign")} / ${voiceHalf}</b></div>`;
+  }).join("");
+
+  // Whichever pose is closest to matching is the one worth tuning against.
+  const closest = results
+    .map((r) => ({ ...r, score: r.checks.filter((c) => c.pass).length }))
+    .sort((a, b) => b.score - a.score)[0];
+  el("d-checks").innerHTML = closest
+    ? `<div class="check-head">${closest.domain.label}</div>` +
+      closest.checks
+        .map((c) => '<div class="check ' + (c.pass ? "pass" : "fail") +
+          '"><span>' + (c.pass ? "✓" : "·") + " " + c.name + "</span></div>")
+        .join("")
+    : "";
 }
 
 el("reset").addEventListener("click", reset);
