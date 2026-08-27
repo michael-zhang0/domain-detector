@@ -230,7 +230,10 @@ function loop(now) {
     for (const domain of DOMAINS) {
       const result = domain.match(landmarks, aspect);
       results.push({ domain, ...result });
-      if (result.match) matched = domain;
+      // First match wins rather than last, so that if the matchers ever stop
+      // being mutually exclusive the behaviour is at least deterministic and
+      // follows roster order. The gesture tests assert they cannot both fire.
+      if (result.match && !matched) matched = domain;
     }
     updateActivation(matched, now);
   } else if (now - state.activatedAt >= RESET_AFTER_MS && el("reset").hidden) {

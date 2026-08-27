@@ -14,7 +14,9 @@ import { matchMalevolentShrine, matchUnlimitedVoid } from "../js/gestures.js";
 const ASPECT = 16 / 9;
 const SIZE = 0.06;
 const SHRINE = ["index", "middle"];
-const VOID = ["thumb", "index"];
+// Same fingers as one half of the Shrine's sign — which is exactly why hand
+// count is the only thing separating the two domains.
+const VOID = ["index", "middle"];
 const OPEN = ["thumb", "index", "middle", "ring", "pinky"];
 const MEET = [0.5 * ASPECT, 0.34];
 const CENTRE = 0.5 * ASPECT;
@@ -24,7 +26,7 @@ const CENTRE = 0.5 * ASPECT;
  * v spans 0..1). Converted to MediaPipe's normalised coordinates by lm(), which
  * is exactly the squash gestures.js has to undo.
  */
-function hand({ wrist, dir, size, extended, chirality = 1 }) {
+function hand({ wrist, dir, size, extended, chirality = 1, spread = 1 }) {
   const [dx, dy] = dir;
   // Knuckle spread runs perpendicular to the hand axis and flips between a left
   // and a right hand, which is what puts both index fingers on the inner side
@@ -51,10 +53,13 @@ function hand({ wrist, dir, size, extended, chirality = 1 }) {
     ["pinky", 17, -0.45],
   ]) {
     const ext = extended.includes(name);
-    out[base] = pt(0.9, across);                    // MCP
-    out[base + 1] = pt(1.35, across);               // PIP
-    out[base + 2] = pt(ext ? 1.7 : 1.15, across);   // DIP
-    out[base + 3] = pt(ext ? 2.1 : 1.05, across);   // TIP
+    // `spread` fans the two front fingers apart, to model a peace sign against
+    // the seal's pressed-together pair.
+    const s = name === "index" || name === "middle" ? across * spread : across;
+    out[base] = pt(0.9, s);                    // MCP
+    out[base + 1] = pt(1.35, s);               // PIP
+    out[base + 2] = pt(ext ? 1.7 : 1.15, s);   // DIP
+    out[base + 3] = pt(ext ? 2.1 : 1.05, s);   // TIP
   }
   out[9] = pt(0.9, 0); // middle MCP sets hand scale, so keep it on the axis
 
@@ -62,29 +67,6 @@ function hand({ wrist, dir, size, extended, chirality = 1 }) {
 }
 
 const lm = (h) => h.map((p) => ({ x: p.u / ASPECT, y: p.v, z: 0 }));
-
-/**
- * Move and scale a hand so two of its landmarks land on chosen points. A
- * similarity transform has exactly four degrees of freedom, so two point pairs
- * determine it — which lets a pose be specified by where the fingertips must
- * meet rather than by guessing at wrist angles.
- */
-function place(h, [i1, i2], q1, q2) {
-  const p1 = h[i1];
-  const p2 = h[i2];
-  const dp = { u: p2.u - p1.u, v: p2.v - p1.v };
-  const dq = { u: q2.u - q1.u, v: q2.v - q1.v };
-  const den = dp.u * dp.u + dp.v * dp.v;
-  // Complex division dq/dp gives rotation and scale together.
-  const a = { u: (dq.u * dp.u + dq.v * dp.v) / den, v: (dq.v * dp.u - dq.u * dp.v) / den };
-  return h.map((p) => {
-    const z = { u: p.u - p1.u, v: p.v - p1.v };
-    return { u: q1.u + a.u * z.u - a.v * z.v, v: q1.v + a.v * z.u + a.u * z.v };
-  });
-}
-
-/** Reflecting a hand flips its handedness, which is what the other hand is. */
-const mirror = (h, cu) => h.map((p) => ({ u: 2 * cu - p.u, v: p.v }));
 
 // ---- Malevolent Shrine: angled inward so the fingertips meet at MEET -------
 
@@ -104,24 +86,14 @@ function shrineHand(side, { extended = SHRINE, reach = 2.1, size = SIZE } = {}) 
 
 const shrinePose = (opts) => [shrineHand(1, opts), shrineHand(-1, opts)];
 
-// ---- Unlimited Void: thumbs meeting low, index tips meeting high -----------
-
-const INDEX_TIP = 8;
-const THUMB_TIP = 4;
+// ---- Unlimited Void: one raised hand, two fingers up as a blade ------------
 
 /**
- * @param {number} gap    how far each hand sits from the centre line
- * @param {number} span   vertical distance between the two meeting points
+ * @param {number[]} dir  which way the fingers point; [0,-1] is straight up
+ * @param {number} spread 1 = pressed together, higher fans them into a V
  */
-function voidPose({ extended = VOID, gap = 0.004, span = 0.12, top = 0.30 } = {}) {
-  const base = hand({ wrist: [0, 0], dir: [0, -1], size: SIZE, extended, chirality: 1 });
-  const left = place(
-    base,
-    [INDEX_TIP, THUMB_TIP],
-    { u: CENTRE - gap, v: top },
-    { u: CENTRE - gap, v: top + span },
-  );
-  return [lm(left), lm(mirror(left, CENTRE))];
+function voidPose({ extended = VOID, dir = [0, -1], spread = 1, size = SIZE } = {}) {
+  return [lm(hand({ wrist: [CENTRE, 0.7], dir, size, extended, spread }))];
 }
 
 // ---- cases ----------------------------------------------------------------
@@ -157,18 +129,29 @@ report("hands apart", [
 
 console.log("\nUnlimited Void:");
 report("the sign", voidPose(), matchUnlimitedVoid, true);
-report("close to camera", voidPose({ span: 0.22 }), matchUnlimitedVoid, true);
-report("far from camera", voidPose({ span: 0.06 }), matchUnlimitedVoid, true);
-report("fingertips not quite touching", voidPose({ gap: 0.012 }), matchUnlimitedVoid, true);
+report("close to camera", voidPose({ size: 0.12 }), matchUnlimitedVoid, true);
+report("far from camera", voidPose({ size: 0.03 }), matchUnlimitedVoid, true);
+report("tilted, still upward", voidPose({ dir: [0.5, -0.87] }), matchUnlimitedVoid, true);
 report("no hands", [], matchUnlimitedVoid, false);
-report("one hand only", [voidPose()[0]], matchUnlimitedVoid, false);
-report("both hands open", voidPose({ extended: OPEN }), matchUnlimitedVoid, false);
-report("fists", voidPose({ extended: [] }), matchUnlimitedVoid, false);
-report("hands apart", voidPose({ gap: 0.09 }), matchUnlimitedVoid, false);
+report("hand open", voidPose({ extended: OPEN }), matchUnlimitedVoid, false);
+report("fist", voidPose({ extended: [] }), matchUnlimitedVoid, false);
+// The things people actually do at a webcam without meaning anything by it.
+report("peace sign (fingers spread)", voidPose({ spread: 3 }), matchUnlimitedVoid, false);
+report("pointing sideways", voidPose({ dir: [1, 0] }), matchUnlimitedVoid, false);
+report("pointing down", voidPose({ dir: [0, 1] }), matchUnlimitedVoid, false);
 
 console.log("\nthe two domains must not collide:");
+// Hand count is the entire discriminator, so these two are the load-bearing
+// assertions in this file.
 report("Shrine pose vs Void matcher", shrinePose(), matchUnlimitedVoid, false);
 report("Void pose vs Shrine matcher", voidPose(), matchMalevolentShrine, false);
+// A second line of defence behind hand count: the Shrine's hands are steepled
+// at ±60°, which measures 0.37 on the upward test, while an upright hand
+// measures 0.99 and even a 45° tilt is 0.60. So if one hand of the Shrine's
+// sign drops out of frame for a moment, the survivor is still too tilted to be
+// read as the Void.
+report("a lone Shrine hand is too tilted for the Void", [shrinePose()[0]], matchUnlimitedVoid, false);
+report("...and one hand is not the Shrine either", [shrinePose()[0]], matchMalevolentShrine, false);
 
 // ---- noise ----------------------------------------------------------------
 

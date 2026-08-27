@@ -38,13 +38,15 @@ Opening a domain takes **both** the sign and the incantation, and both must name
 | Domain | Sign | Incantation |
 |---|---|---|
 | **Malevolent Shrine** | index + middle extended on both hands, fingertips pressed together, wrists apart | 領域展開・伏魔御廚子 (*ryōiki tenkai, fukuma mizushi*) |
-| **Unlimited Void** | thumbs and index fingers extended and meeting tip to tip, other fingers folded, hands enclosing an opening | 領域展開・無量空処 (*ryōiki tenkai, muryō kūsho*) |
+| **Unlimited Void** | **one hand only**, raised beside the face: index and middle extended and pressed together pointing up, ring and pinky folded | 領域展開・無量空処 (*ryōiki tenkai, muryō kūsho*) |
 
 Both halves of the line are required; neither counts on its own. 領域展開 is shared, so the second
 half is what picks the domain.
 
-The two signs are separated by the middle finger — extended for the Shrine, folded for the Void.
-Nothing else tells them apart reliably, since both are two-handed and fingertip-to-fingertip.
+**The Void needs exactly one hand in frame.** Its finger shape is the same as one half of the
+Shrine's sign, so hand count is the only thing telling the two apart — keep your other hand out of
+shot or nothing will fire. Holding the two fingers apart makes it a peace sign, which is rejected on
+purpose.
 
 They do not have to land at the same instant. Each is remembered for 5 seconds, so signing then
 speaking works as well as speaking then signing, and holding the sign while you say the line is

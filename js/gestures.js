@@ -7,12 +7,14 @@
 //   against the other hand's, ring + pinky curled, wrists apart so the hands
 //   form a steeple.
 //
-//   Unlimited Void — thumbs and index fingers extended and meeting tip to tip,
-//   everything else curled, so the hands enclose an aperture.
+//   Unlimited Void — one raised hand, index and middle extended and pressed
+//   together pointing up, ring and pinky folded away.
 //
-// The two must be mutually exclusive or both fire at once. The middle finger
-// does that job: extended for the Shrine, curled for the Void. Nothing else
-// separates them reliably, since both are two-handed and fingertip-to-fingertip.
+// The two must be mutually exclusive or both fire at once, and here that is not
+// a matter of degree: the Void's finger pattern is exactly what each individual
+// hand in the Shrine's sign is doing. **Hand count is the whole discriminator.**
+// The Void needs exactly one hand in frame, the Shrine two. Nothing else
+// separates them, so do not relax either bound.
 //
 // Every threshold lives in TUNING and every condition reports itself by name,
 // so you can watch the debug panel and adjust while standing in front of the
@@ -22,12 +24,6 @@ export const TUNING = {
   // dist(wrist, tip) / dist(wrist, pip) — how straight a finger has to be.
   extendedRatio: 1.30,
   curledRatio: 1.20,
-  // The thumb is shorter and sits at an angle, so its ratio never reaches what
-  // the fingers manage and it needs its own bar. Measured under 8% landmark
-  // noise: an extended thumb runs 1.01–1.36, a folded one 0.54–0.82. This sits
-  // in the empty band between, rather than just under the extended range —
-  // 1.12 looked reasonable and silently cost a quarter of the frames.
-  thumbExtendedRatio: 0.95,
   // Distances below are multiples of hand scale = dist(wrist, middle MCP).
   // A cleanly held sign measures ~0.5 and ~0.2; these sit well above that on
   // purpose, because nobody presses their fingertips exactly together and tips
@@ -35,16 +31,20 @@ export const TUNING = {
   // still measure past 1.4, so the slack does not cost a rejection.
   indexTipsApart: 1.15,
   middleTipsApart: 1.35,
-  thumbTipsApart: 1.15,
   wristsApart: 0.80,
-  // Thumbs and index tips must sit at different heights, or a pair of hands
-  // simply clasped together would read as an aperture.
-  apertureOpen: 0.45,
+  // Void: index and middle held as one, which is what separates the seal from
+  // an ordinary peace sign. Pressed together measures ~0.35, a spread V ~1.0.
+  fingersTogether: 0.62,
+  // Void: how close to straight up the fingers must point. 0.5 is a 60° cone
+  // around vertical — the hand is raised beside the face, not resting.
+  pointingUp: 0.5,
 };
 
 const WRIST = 0;
+// No thumb entry: neither sign constrains it, and a thumb needs its own
+// extension threshold (it is shorter and angled), so a half-supported one here
+// would be a trap for whoever adds the next domain.
 const FINGERS = {
-  thumb: { mcp: 2, pip: 3, tip: 4 },
   index: { mcp: 5, pip: 6, tip: 8 },
   middle: { mcp: 9, pip: 10, tip: 12 },
   ring: { mcp: 13, pip: 14, tip: 16 },
@@ -71,8 +71,7 @@ function handScale(lm, aspect) {
 }
 
 function extended(lm, finger, aspect) {
-  const bar = finger === "thumb" ? TUNING.thumbExtendedRatio : TUNING.extendedRatio;
-  return extensionRatio(lm, finger, aspect) >= bar;
+  return extensionRatio(lm, finger, aspect) >= TUNING.extendedRatio;
 }
 
 function curled(lm, finger, aspect) {
@@ -129,9 +128,14 @@ export function matchMalevolentShrine(hands, aspect) {
 /**
  * Evaluate the Unlimited Void pose — Gojo's 無量空処.
  *
- * Thumbs meeting, index fingertips meeting, everything else folded away, so the
- * two hands enclose an opening. The curled middle finger is what keeps this
- * from colliding with the Shrine.
+ * One hand raised beside the face, index and middle extended and pressed
+ * together pointing up, ring and pinky folded. The thumb is left unconstrained:
+ * it is tucked in the source but sits wherever it likes in practice, and it is
+ * not needed to tell this from anything else.
+ *
+ * The single-hand requirement is load-bearing, not incidental. This exact
+ * finger pattern is what each hand in the Shrine's sign is doing, so allowing a
+ * second hand in frame would make both domains fire on the Shrine's pose.
  *
  * @param {{x:number,y:number}[][]} hands  normalised landmark sets
  * @param {number} aspect                  video width / height
@@ -141,35 +145,31 @@ export function matchUnlimitedVoid(hands, aspect) {
   const checks = [];
   const add = (name, pass) => (checks.push({ name, pass }), pass);
 
-  if (!add("two hands", hands.length >= 2)) return { match: false, checks };
+  // Exactly one, not "at least one" — see above.
+  if (!add("exactly one hand", hands.length === 1)) return { match: false, checks };
 
-  const [a, b] = twoHands(hands, aspect);
-  const scale = (handScale(a, aspect) + handScale(b, aspect)) / 2;
+  const lm = hands[0];
+  const scale = handScale(lm, aspect);
 
-  const voidFingers = (lm) =>
-    extended(lm, "thumb", aspect) &&
+  add(
+    "index+middle up, ring+pinky down",
     extended(lm, "index", aspect) &&
-    curled(lm, "middle", aspect) &&
-    curled(lm, "ring", aspect) &&
-    curled(lm, "pinky", aspect);
-
-  add("L thumb+index out, rest folded", voidFingers(a));
-  add("R thumb+index out, rest folded", voidFingers(b));
-
-  const thumbGap = dist(a[FINGERS.thumb.tip], b[FINGERS.thumb.tip], aspect);
-  const indexGap = dist(a[FINGERS.index.tip], b[FINGERS.index.tip], aspect);
-  add("thumb tips together", thumbGap <= TUNING.thumbTipsApart * scale);
-  add("index tips together", indexGap <= TUNING.indexTipsApart * scale);
-
-  // Thumbs meet at one corner and index tips at another; if those two meeting
-  // points sit on top of each other the hands are just clasped, not framing
-  // anything.
-  const span = dist(
-    midpoint(a[FINGERS.thumb.tip], b[FINGERS.thumb.tip]),
-    midpoint(a[FINGERS.index.tip], b[FINGERS.index.tip]),
-    aspect,
+      extended(lm, "middle", aspect) &&
+      curled(lm, "ring", aspect) &&
+      curled(lm, "pinky", aspect),
   );
-  add("aperture open", span >= TUNING.apertureOpen * scale);
+
+  // Held as one blade. Splitting them is a peace sign, which is a thing people
+  // do at cameras by accident all day.
+  const spread = dist(lm[FINGERS.index.tip], lm[FINGERS.middle.tip], aspect);
+  add("fingers pressed together", spread <= TUNING.fingersTogether * scale);
+
+  // Raised, not resting. y grows downward in image space, so an upward hand has
+  // its fingertips above the wrist.
+  const tip = midpoint(lm[FINGERS.index.tip], lm[FINGERS.middle.tip]);
+  const reach = dist(lm[WRIST], tip, aspect);
+  const rise = lm[WRIST].y - tip.y;
+  add("fingers pointing up", reach > 1e-6 && rise / reach >= TUNING.pointingUp);
 
   return { match: checks.every((c) => c.pass), checks };
 }

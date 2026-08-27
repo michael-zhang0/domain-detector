@@ -82,11 +82,21 @@ servers while listening, so `VOICE_ENABLED` in `main.js` turns it off. The phras
 and exported, tested in `test/voice.test.mjs` — recognition output varies enough (kanji vs kana,
 spacing, mishearings) that the accepted forms are worth pinning down.
 
-**Domains must be mutually exclusive, and that is the hard constraint.** *(settled)* Both signs are
-two-handed and fingertip-to-fingertip, so a loose threshold makes both fire on the same pose. The
-middle finger separates them — extended for the Shrine, folded for the Void — and the gesture tests
-assert each pose is *rejected* by the other's matcher. A third domain needs the same treatment:
-pick a discriminator, then test the rejection, not just the match.
+**Domains must be mutually exclusive, and that is the hard constraint.** *(settled)* The Void is one
+raised hand with index and middle extended — which is *exactly* what each hand in the Shrine's
+two-handed sign is doing. There is no finger-level difference to exploit, so **hand count is the
+entire discriminator**: the Void requires `hands.length === 1`, the Shrine `>= 2`. Do not relax
+either bound without replacing the discriminator.
+
+A second, weaker line of defence: the Shrine's hands are steepled at ±60°, measuring 0.37 on the
+Void's upward test against 0.99 for an upright hand, so a lone Shrine hand that survives a dropped
+frame is still too tilted to read as the Void.
+
+The gesture tests assert each pose is *rejected* by the other's matcher. A third domain needs the
+same treatment: pick a discriminator, then test the rejection, not just the match.
+
+Consequence worth remembering: the Void cannot fire while a second hand is visible. That is
+inherent to the discriminator, not a bug to be fixed.
 
 Same for the incantations: `test/voice.test.mjs` checks no phrase belongs to two domains.
 
