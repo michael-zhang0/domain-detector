@@ -82,21 +82,26 @@ servers while listening, so `VOICE_ENABLED` in `main.js` turns it off. The phras
 and exported, tested in `test/voice.test.mjs` — recognition output varies enough (kanji vs kana,
 spacing, mishearings) that the accepted forms are worth pinning down.
 
-**Domains must be mutually exclusive, and that is the hard constraint.** *(settled)* The Void is one
-raised hand with index and middle extended — which is *exactly* what each hand in the Shrine's
-two-handed sign is doing. There is no finger-level difference to exploit, so **hand count is the
-entire discriminator**: the Void requires `hands.length === 1`, the Shrine `>= 2`. Do not relax
-either bound without replacing the discriminator.
+**Domains must be mutually exclusive, and that is the hard constraint.** *(settled)* The two signs
+are separated twice over, and keeping both separations is deliberate:
 
-A second, weaker line of defence: the Shrine's hands are steepled at ±60°, measuring 0.37 on the
-Void's upward test against 0.99 for an upright hand, so a lone Shrine hand that survives a dropped
-frame is still too tilted to read as the Void.
+- **Hand count.** The Void requires `hands.length === 1`, the Shrine `>= 2`.
+- **Finger pattern.** The Shrine raises middle + ring; the Void raises index + middle, crossed.
 
-The gesture tests assert each pose is *rejected* by the other's matcher. A third domain needs the
-same treatment: pick a discriminator, then test the rejection, not just the match.
+Either alone would suffice; having both means a dropped hand or one misread finger cannot make one
+domain fire as the other. A lone Shrine hand currently fails the Void on three separate checks.
 
-Consequence worth remembering: the Void cannot fire while a second hand is visible. That is
-inherent to the discriminator, not a bug to be fixed.
+The gesture tests assert each pose is *rejected* by the other's matcher, in both directions. A third
+domain needs the same treatment: pick a discriminator, then test the rejection, not just the match.
+
+Consequence worth remembering: the Void cannot fire while a second hand is visible. That is inherent
+to the hand-count discriminator, not a bug to be fixed.
+
+**Crossing is detected by order, not position.** *(settled)* Along the knuckle line the index sits
+before the middle; crossing swaps the *fingertips* while the knuckles stay put, so comparing the two
+orderings finds it at any hand rotation. This is also what rejects a peace sign, which has the same
+two fingers up in the ordinary order — worth keeping, since it is the single most likely accidental
+pose in front of a webcam.
 
 Same for the incantations: `test/voice.test.mjs` checks no phrase belongs to two domains.
 

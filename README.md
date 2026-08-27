@@ -37,16 +37,15 @@ Opening a domain takes **both** the sign and the incantation, and both must name
 
 | Domain | Sign | Incantation |
 |---|---|---|
-| **Malevolent Shrine** | index + middle extended on both hands, fingertips pressed together, wrists apart | 領域展開・伏魔御廚子 (*ryōiki tenkai, fukuma mizushi*) |
-| **Unlimited Void** | **one hand only**, raised beside the face: index and middle extended and pressed together pointing up, ring and pinky folded | 領域展開・無量空処 (*ryōiki tenkai, muryō kūsho*) |
+| **Malevolent Shrine** | **both hands**: middle + ring extended, index + pinky folded, fingertips pressed against the other hand's, wrists apart | 領域展開・伏魔御廚子 (*ryōiki tenkai, fukuma mizushi*) |
+| **Unlimited Void** | **one hand only**, raised beside the face: middle finger crossed over the index, ring and pinky folded | 領域展開・無量空処 (*ryōiki tenkai, muryō kūsho*) |
 
 Both halves of the line are required; neither counts on its own. 領域展開 is shared, so the second
 half is what picks the domain.
 
-**The Void needs exactly one hand in frame.** Its finger shape is the same as one half of the
-Shrine's sign, so hand count is the only thing telling the two apart — keep your other hand out of
-shot or nothing will fire. Holding the two fingers apart makes it a peace sign, which is rejected on
-purpose.
+**The Void needs exactly one hand in frame** — keep your other hand out of shot. And the fingers
+must actually be *crossed*: two fingers held up side by side is a peace sign and is rejected on
+purpose, since that is the pose people make at a webcam without meaning anything by it.
 
 They do not have to land at the same instant. Each is remembered for 5 seconds, so signing then
 speaking works as well as speaking then signing, and holding the sign while you say the line is
