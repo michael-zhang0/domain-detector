@@ -61,6 +61,53 @@ function curled(lm, finger, aspect) {
 }
 
 /**
+ * The two hands nearest the camera, largest first.
+ *
+ * Shared with the debug readout deliberately: if the panel picked its hands
+ * differently from the matcher it would report numbers for a pose that is not
+ * the one being judged.
+ */
+function twoHands(hands, aspect) {
+  return [...hands]
+    .sort((h1, h2) => handScale(h2, aspect) - handScale(h1, aspect))
+    .slice(0, 2);
+}
+
+/**
+ * Raw per-finger measurements, for the debug panel.
+ *
+ * The thresholds in TUNING were set against synthetic landmarks, which is
+ * circular — the model and the numbers were designed together. Real hands in
+ * front of a real camera are the only independent evidence, so this exposes
+ * what is actually being measured rather than only pass/fail.
+ */
+export function describeHand(lm, aspect) {
+  return {
+    index: extensionRatio(lm, "index", aspect),
+    middle: extensionRatio(lm, "middle", aspect),
+    ring: extensionRatio(lm, "ring", aspect),
+    pinky: extensionRatio(lm, "pinky", aspect),
+  };
+}
+
+/**
+ * Distances between the two hands, as multiples of hand scale — the same units
+ * the thresholds are written in, so the panel and TUNING read alike.
+ *
+ * @returns {{indexGap:number, middleGap:number, wristGap:number}|null}
+ */
+export function describePair(hands, aspect) {
+  if (hands.length < 2) return null;
+  const [a, b] = twoHands(hands, aspect);
+  const scale = (handScale(a, aspect) + handScale(b, aspect)) / 2;
+  return {
+    indexGap: dist(a[FINGERS.index.tip], b[FINGERS.index.tip], aspect) / scale,
+    middleGap: dist(a[FINGERS.middle.tip], b[FINGERS.middle.tip], aspect) / scale,
+    wristGap: dist(a[WRIST], b[WRIST], aspect) / scale,
+  };
+}
+
+/**
  * Evaluate the Malevolent Shrine pose.
  *
  * @param {{x:number,y:number}[][]} hands  normalised landmark sets
@@ -74,10 +121,7 @@ export function matchMalevolentShrine(hands, aspect) {
   if (!add("two hands", hands.length >= 2)) return { match: false, checks };
 
   // With more than two hands in frame, take the two largest — closest to camera.
-  const [a, b] = [...hands]
-    .sort((h1, h2) => handScale(h2, aspect) - handScale(h1, aspect))
-    .slice(0, 2);
-
+  const [a, b] = twoHands(hands, aspect);
   const scale = (handScale(a, aspect) + handScale(b, aspect)) / 2;
 
   const shrineFingers = (lm) =>

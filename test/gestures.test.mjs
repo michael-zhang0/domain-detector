@@ -5,7 +5,7 @@
 // webcam. When sequence matching arrives, this is where the recorded windows
 // should be replayed.
 
-import { matchMalevolentShrine } from "../js/gestures.js";
+import { matchMalevolentShrine, describeHand, describePair, TUNING } from "../js/gestures.js";
 
 const ASPECT = 16 / 9;
 const SIZE = 0.06;
@@ -120,6 +120,36 @@ for (const pct of [2, 5, 8, 12]) {
   // Below ~8% noise the charge bar should fill without stuttering.
   if (pct <= 8 && rate < 95) failures++;
   console.log(`  ${String(pct).padStart(3)}% noise -> ${String(rate).padStart(3)}% match`);
+}
+
+// The debug readout has to agree with the matcher. If the panel reported
+// numbers that disagreed with the pass/fail beside them, it would send whoever
+// is tuning after the wrong finger.
+console.log("\ndebug readout agrees with the matcher:");
+{
+  const good = [shrineHand(1), shrineHand(-1)];
+  const hand = describeHand(good[0], ASPECT);
+  const pair = describePair(good, ASPECT);
+  const check = (name, got, want) => {
+    const ok = got === want;
+    if (!ok) failures++;
+    console.log(`${ok ? "PASS" : "FAIL"}  ${name.padEnd(34)} ${got} (want ${want})`);
+  };
+
+  check("index reads as extended", hand.index >= TUNING.extendedRatio, true);
+  check("middle reads as extended", hand.middle >= TUNING.extendedRatio, true);
+  check("ring reads as curled", hand.ring <= TUNING.curledRatio, true);
+  check("pinky reads as curled", hand.pinky <= TUNING.curledRatio, true);
+  check("index gap within threshold", pair.indexGap <= TUNING.indexTipsApart, true);
+  check("middle gap within threshold", pair.middleGap <= TUNING.middleTipsApart, true);
+  check("wrists past threshold", pair.wristGap >= TUNING.wristsApart, true);
+  // Every one of those agreeing is the same verdict the matcher reaches.
+  check("...which is what the matcher says", matchMalevolentShrine(good, ASPECT).match, true);
+
+  // And a pose that fails should show it in the numbers, not just the verdict.
+  const fists = [shrineHand(1, { extended: [] }), shrineHand(-1, { extended: [] })];
+  check("a fist reads as not extended", describeHand(fists[0], ASPECT).index >= TUNING.extendedRatio, false);
+  check("one hand has no pair to measure", describePair([shrineHand(1)], ASPECT), null);
 }
 
 console.log(failures ? `\n${failures} failing` : "\nall passing");

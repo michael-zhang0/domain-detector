@@ -1,7 +1,7 @@
 // Wiring for the four stages, plus the activation state machine.
 
 import { HandTracker } from "./hand-tracking.js";
-import { matchMalevolentShrine } from "./gestures.js";
+import { matchMalevolentShrine, describeHand, describePair, TUNING } from "./gestures.js";
 import { PersonSegmenter } from "./segmentation.js";
 import { Compositor } from "./compositor.js";
 import { MalevolentShrine } from "./backgrounds/malevolent-shrine.js";
@@ -245,15 +245,15 @@ function loop(now) {
     compositor.drawCamera(video);
   }
 
-  updateHud(landmarks.length, checks, segmented);
+  updateHud(landmarks, checks, segmented);
 }
 
 // ---- HUD -------------------------------------------------------------------
 
-function updateHud(handCount, checks, segmented) {
+function updateHud(landmarks, checks, segmented) {
   if (!state.showDebug) return;
   el("d-fps").textContent = state.fps.toFixed(0);
-  el("d-hands").textContent = handCount;
+  el("d-hands").textContent = landmarks.length;
   el("d-state").textContent = state.active ? "ACTIVE" : "idle";
 
   // With two conditions to line up, knowing which half is missing is the whole
@@ -271,6 +271,46 @@ function updateHud(handCount, checks, segmented) {
     .map((c) => '<div class="check ' + (c.pass ? "pass" : "fail") +
       '"><span>' + (c.pass ? "✓" : "·") + " " + c.name + "</span></div>")
     .join("");
+
+  el("d-raw").innerHTML = renderMeasurements(landmarks);
+}
+
+/**
+ * What the camera is actually measuring, against what each check wants.
+ *
+ * Pass/fail alone cannot tell you whether a finger is marginally short of the
+ * bar or nowhere near it, and the thresholds were only ever calibrated against
+ * synthetic landmarks. These are the numbers to read out when a sign will not
+ * fire.
+ */
+function renderMeasurements(landmarks) {
+  if (!landmarks.length) return '<div class="legend">no hand</div>';
+
+  const aspect = video.videoWidth / video.videoHeight;
+  const row = (name, value, ok, want) =>
+    `<div class="check ${ok ? "pass" : "fail"}">` +
+    `<span>${name} ${value.toFixed(2)}</span><b>${want}</b></div>`;
+
+  // The hand nearest the camera, which is the one the matcher weighs first.
+  const hand = describeHand(landmarks[0], aspect);
+  const up = TUNING.extendedRatio;
+  const down = TUNING.curledRatio;
+  let html =
+    row("index", hand.index, hand.index >= up, "up ≥" + up) +
+    row("middle", hand.middle, hand.middle >= up, "up ≥" + up) +
+    row("ring", hand.ring, hand.ring <= down, "down ≤" + down) +
+    row("pinky", hand.pinky, hand.pinky <= down, "down ≤" + down);
+
+  const pair = describePair(landmarks, aspect);
+  if (pair) {
+    html +=
+      row("idx gap", pair.indexGap, pair.indexGap <= TUNING.indexTipsApart, "≤" + TUNING.indexTipsApart) +
+      row("mid gap", pair.middleGap, pair.middleGap <= TUNING.middleTipsApart, "≤" + TUNING.middleTipsApart) +
+      row("wrists", pair.wristGap, pair.wristGap >= TUNING.wristsApart, "≥" + TUNING.wristsApart);
+  } else {
+    html += '<div class="legend">second hand needed for gaps</div>';
+  }
+  return html;
 }
 
 el("reset").addEventListener("click", reset);
