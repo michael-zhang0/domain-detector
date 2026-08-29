@@ -6,9 +6,6 @@
 //
 // Chrome only. Firefox and Safari have no usable implementation, in which case
 // `supported` is false and the caller falls back to the gesture alone.
-//
-// Domain-agnostic on purpose: the naming half of each line lives in domains.js
-// and is passed in, so this module and its tests never pull in canvas code.
 
 import { TriggerPairing } from "./trigger.js";
 
@@ -16,14 +13,23 @@ import { TriggerPairing } from "./trigger.js";
 // tested outside a browser.
 const SpeechRecognition = globalThis.SpeechRecognition ?? globalThis.webkitSpeechRecognition;
 
-// 領域展開 — the opening every domain shares. The naming half that follows is
-// what picks out which domain, and both are required.
+// The line is 領域展開・伏魔御廚子, and both halves are required. Each half has
+// several accepted spellings because recognition returns kanji, kana, or romaji
+// depending on how it hears you, and mishears predictable syllables.
 const OPENING = [
   "領域展開",
   "りょういきてんかい",
   "ryoikitenkai",
   "ryouikitenkai",
   "ryoikitengai",
+];
+
+const NAME = [
+  "伏魔御廚子", // the 廚 and 厨 variants of the last character both appear
+  "伏魔御厨子",
+  "ふくまみずし",
+  "fukumamizushi",
+  "fukumamizuchi",
 ];
 
 // How long one half waits for the other. The full line takes a couple of
@@ -40,49 +46,39 @@ export function normalise(text) {
 }
 
 /**
- * Which halves of an incantation appear in one transcript.
- * @param {{id: string, phrases: string[]}[]} domains
- * @returns {{opening: boolean, name: string|null}} name is a domain id
+ * Which halves of the incantation appear in one transcript.
+ * @returns {{opening: boolean, name: boolean}}
  */
-export function halvesIn(transcript, domains) {
+export function halvesIn(transcript) {
   const text = normalise(transcript);
   return {
     opening: OPENING.some((p) => text.includes(p)),
-    name: domains.find((d) => d.phrases.some((p) => text.includes(p)))?.id ?? null,
+    name: NAME.some((p) => text.includes(p)),
   };
 }
 
-/**
- * Which domain a single transcript names outright, opening included.
- * @returns {string|null} domain id
- */
-export function matchesIncantation(transcript, domains) {
-  const { opening, name } = halvesIn(transcript, domains);
-  return opening ? name : null;
+/** Whether a single transcript contains the whole line. Exported for tests. */
+export function matchesIncantation(transcript) {
+  const { opening, name } = halvesIn(transcript);
+  return opening && name;
 }
 
 export class VoiceTrigger {
   #recognition = null;
-  #domains;
   #onMatch;
   #running = false;
   #lastFiredAt = 0;
-  // One pairing per domain. The halves often arrive in separate results — an
-  // interim for the opening, then another as the name firms up — so they are
-  // accumulated rather than required in a single transcript.
-  #heard;
+  // The halves often arrive in separate results — an interim for the first
+  // words, then another as the rest firms up — so they are accumulated rather
+  // than required in one transcript.
+  #heard = new TriggerPairing(HALF_WINDOW_MS, ["opening", "name"]);
 
   /**
-   * @param {{id: string, phrases: string[]}[]} domains
-   * @param {(domainId: string) => void} onMatch
-   * @param {string} lang  recognition language; the lines are Japanese
+   * @param {() => void} onMatch  called when the whole incantation is heard
+   * @param {string} lang         recognition language; the line is Japanese
    */
-  constructor(domains, onMatch, lang = "ja-JP") {
-    this.#domains = domains;
+  constructor(onMatch, lang = "ja-JP") {
     this.#onMatch = onMatch;
-    this.#heard = new Map(
-      domains.map((d) => [d.id, new TriggerPairing(HALF_WINDOW_MS, ["opening", "name"])]),
-    );
     if (!SpeechRecognition) return;
 
     const r = new SpeechRecognition();
@@ -129,26 +125,20 @@ export class VoiceTrigger {
 
   #test(transcript) {
     const now = performance.now();
-    const { opening, name } = halvesIn(transcript, this.#domains);
+    const { opening, name } = halvesIn(transcript);
+    if (opening) this.#heard.note("opening", now);
+    if (name) this.#heard.note("name", now);
 
-    // The opening belongs to whichever domain is named next, so it counts for
-    // all of them until one completes.
-    if (opening) for (const p of this.#heard.values()) p.note("opening", now);
-    if (name) this.#heard.get(name)?.note("name", now);
+    if (!this.#heard.ready(now, true)) return false;
 
-    for (const [id, pairing] of this.#heard) {
-      if (!pairing.ready(now, true)) continue;
-
-      // Interim results repeat the same words as they firm up, so one utterance
-      // would otherwise fire several times.
-      if (now - this.#lastFiredAt < 2500) return true;
-      this.#lastFiredAt = now;
-      // Next activation has to hear a whole line again.
-      for (const p of this.#heard.values()) p.clear();
-      this.#onMatch(id);
-      return true;
-    }
-    return false;
+    // Interim results repeat the same words as they firm up, so one utterance
+    // would otherwise fire several times.
+    if (now - this.#lastFiredAt < 2500) return true;
+    this.#lastFiredAt = now;
+    // Next activation has to hear the whole line again.
+    this.#heard.clear();
+    this.#onMatch();
+    return true;
   }
 
   start() {
@@ -164,7 +154,7 @@ export class VoiceTrigger {
   stop() {
     if (!this.#recognition) return;
     this.#running = false;
-    for (const p of this.#heard.values()) p.clear();
+    this.#heard.clear();
     this.#recognition.stop();
   }
 }

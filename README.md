@@ -1,8 +1,6 @@
 # Domain Detector
 
-Throw a domain expansion hand sign at your webcam, say the incantation, and the room behind you
-becomes the domain. Two are implemented: Sukuna's **Malevolent Shrine** and Gojo's
-**Unlimited Void**.
+Throw Sukuna's hand sign at your webcam and the room behind you becomes the Malevolent Shrine.
 
 Adding more in the future
 
@@ -27,25 +25,17 @@ first run needs a network connection.
 Serving matters: `getUserMedia` needs a secure context, and `file://` is not one. Opening
 `index.html` by double-clicking will not get you a camera.
 
-A fresh clone runs with an empty `assets/` folder — every domain's art is drawn and its audio
-synthesised at runtime. Supplying your own files is optional; see
-[using your own art and audio](#using-your-own-art-and-audio).
+A fresh clone runs with an empty `assets/` folder — the shrine is drawn and the audio synthesised at
+runtime. Supplying your own files is optional; see [using your own art and audio](#using-your-own-art-and-audio).
 
 ## Using it
 
-Opening a domain takes **both** the sign and the incantation, and both must name the same domain:
+Opening the domain takes **both** of these together:
 
-| Domain | Sign | Incantation |
-|---|---|---|
-| **Malevolent Shrine** | **both hands**: middle + ring extended, index + pinky folded, fingertips pressed against the other hand's, wrists apart | 領域展開・伏魔御廚子 (*ryōiki tenkai, fukuma mizushi*) |
-| **Unlimited Void** | one hand raised beside the face: middle finger crossed over the index, ring and pinky folded | 領域展開・無量空処 (*ryōiki tenkai, muryō kūsho*) |
-
-Both halves of the line are required; neither counts on its own. 領域展開 is shared, so the second
-half is what picks the domain.
-
-The Void does not care how many hands are in frame — your other hand can rest wherever. The fingers
-do have to be genuinely *crossed*: two fingers held up side by side is a peace sign and is rejected
-on purpose, since that is the pose people make at a webcam without meaning anything by it.
+- **Throw the sign** — index and middle extended on both hands, fingertips pressed together, wrists
+  apart.
+- **Say the whole incantation** — 領域展開・伏魔御廚子 (*ryōiki tenkai, fukuma mizushi*). Both
+  halves are required; neither counts on its own.
 
 They do not have to land at the same instant. Each is remembered for 5 seconds, so signing then
 speaking works as well as speaking then signing, and holding the sign while you say the line is
@@ -84,10 +74,8 @@ microphone audio is streamed to Google's servers for transcription. Set `VOICE_E
 the top of [main.js](js/main.js) to switch it off entirely; the gesture still works. Chrome and Edge
 only; elsewhere the app silently falls back to gesture-only.
 
-Recognition runs in `ja-JP`. The shared opening is `OPENING` in [voice.js](js/voice.js); each
-domain's naming half is its `phrases` list in [domains.js](js/domains.js). Accepted spellings —
-kanji, kana, and romaji — are pinned by `test/voice.test.mjs`, which also checks that no phrase
-belongs to two domains.
+Recognition runs in `ja-JP`. Accepted spellings — kanji, kana, and romaji — are listed as `OPENING`
+and `NAME` in [voice.js](js/voice.js) and pinned by `test/voice.test.mjs`.
 
 The two halves rarely arrive in one transcript: an utterance usually produces several results as it
 firms up, so each half is remembered for 6 seconds (`HALF_WINDOW_MS`) and the trigger fires when
@@ -101,11 +89,9 @@ Four stages per frame, wired in [main.js](js/main.js):
 |---|---|---|
 | 1. Hand tracking | [hand-tracking.js](js/hand-tracking.js) | MediaPipe `HandLandmarker`, 21 landmarks/hand, GPU |
 | 2. Gesture matching | [gestures.js](js/gestures.js) | Static-pose heuristics, no training, no DOM — so it is testable |
-| — | [domains.js](js/domains.js) | The roster: pose, incantation, art, sound and assets per domain |
 | 3. Segmentation | [segmentation.js](js/segmentation.js) | MediaPipe `ImageSegmenter`, selfie model, run at 144p |
 | 3. Compositing | [compositor.js](js/compositor.js) | Mask upscaled and blurred, person graded into the domain |
 | 3. Domain art | [backgrounds/malevolent-shrine.js](js/backgrounds/malevolent-shrine.js) | Canvas2D, procedural |
-| 3. Domain art | [backgrounds/unlimited-void.js](js/backgrounds/unlimited-void.js) | Canvas2D, procedural |
 | 4. Payoff | [audio.js](js/audio.js) | Web Audio, synthesised |
 
 ### Performance
@@ -118,21 +104,18 @@ frame before mask quality is touched.
 
 ### Using your own art and audio
 
-The art and audio are generated at runtime because the project ships with no assets. To use your own
-instead, drop files at these paths — each one is picked up independently, and anything missing falls
-back to the generated version. Every domain takes the same three slots, named after its id:
+The shrine and its cue are generated at runtime because the project ships with no assets. To use
+your own instead, drop files at these paths — each one is picked up independently, and anything
+missing falls back to the generated version:
 
 | Path | |
 |---|---|
-| `assets/<id>.mp4` | looping background video, replaces the drawn art |
-| `assets/<id>-cue.mp3` | one-shot hit on activation |
-| `assets/<id>-bed.mp3` | loops while the domain is open, cut on reset |
+| `assets/malevolent-shrine.mp4` | looping background video, replaces the drawn shrine |
+| `assets/malevolent-shrine-cue.mp3` | one-shot hit on activation |
+| `assets/malevolent-shrine-bed.mp3` | loops while the domain is open, cut on reset |
 
-`<id>` is `malevolent-shrine` or `unlimited-void` — so `assets/unlimited-void-cue.mp3` is Gojo's
-activation sound. Supplying one domain's files does not affect the other's.
-
-Paths are configured per domain in [domains.js](js/domains.js). With an empty `assets/` directory
-the console logs a 404 for each missing file at boot; that is the probe, not a failure. Video is cover-fitted, so
+Paths are configured in `ASSETS` at the top of [main.js](js/main.js). With no `assets/` directory
+the console logs three 404s at boot; that is the probe, not a failure. Video is cover-fitted, so
 any aspect ratio works, and it is paused whenever the domain is closed.
 
 Source your own footage and audio — this repo does not include any, and ripping it from a stream

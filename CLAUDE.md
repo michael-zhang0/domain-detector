@@ -4,14 +4,9 @@ Real-time computer vision toy: detect hand gestures from a webcam, match them ag
 Jujutsu Kaisen domain expansion hand signs, and when one fires, replace the background with that
 domain's animated art and play its audio cue — so it looks like you actually activated the domain.
 
-Status: **two domains working end to end** as of 2026-08-26 — Sukuna's Malevolent Shrine and Gojo's
-Unlimited Void, all four stages, pushed to GitHub. See README.md for how to run it and what each
-file does. Everything below is still the plan of record; the sections marked *(settled)* record what
-building it decided.
-
-Adding a third domain means one entry in `js/domains.js` (pose matcher, naming phrases, background
-factory, audio profile, asset paths) plus its matcher and background. `main.js` walks the roster and
-knows nothing about any particular domain — keep it that way.
+Status: **one domain working end to end** as of 2026-08-24 — Sukuna's Malevolent Shrine, all four
+stages. See README.md for how to run it and what each file does. Everything below is still the
+plan of record; the sections marked *(settled)* record what building the first slice decided.
 
 ## Pipeline (the whole app in four stages)
 
@@ -81,39 +76,6 @@ Voice is Chrome's `SpeechRecognition` only, and it is **not on-device** — audi
 servers while listening, so `VOICE_ENABLED` in `main.js` turns it off. The phrase matcher is pure
 and exported, tested in `test/voice.test.mjs` — recognition output varies enough (kanji vs kana,
 spacing, mishearings) that the accepted forms are worth pinning down.
-
-**Domains must be mutually exclusive, and the discriminator is the finger pattern only.** *(settled)*
-The Shrine raises middle + ring; the Void raises index + middle, crossed. A Shrine hand curls the
-index, which the Void requires extended, so neither can satisfy the other.
-
-**Do not gate on hand count.** An earlier version required `hands.length === 1` for the Void as a
-second discriminator, and it broke the app in the field: MediaPipe's hand count flickers between one
-and two as a second hand drifts in and out of confidence, which reset the confirm counter before it
-could reach `CONFIRM_FRAMES` (so nothing ever fired) and flipped the debug panel between domains
-every few frames (so it looked like the app was switching by itself). The Void now scans every hand
-and takes the best. The Shrine genuinely needs two, which is fine — that is a lower bound, not an
-equality.
-
-`CONFIRM_TOLERANCE` exists for the same reason: a held sign that MediaPipe loses for a frame or two
-is still being held, and both signs occlude fingers by design.
-
-The gesture tests assert each pose is *rejected* by the other's matcher in both directions, and that
-the Void still fires with a second hand in frame. A third domain needs the same treatment: pick a
-discriminator, then test the rejection, not just the match.
-
-**Crossing is detected by order, not position.** *(settled)* Along the knuckle line the index sits
-before the middle; crossing swaps the *fingertips* while the knuckles stay put, so comparing the two
-orderings finds it at any hand rotation. This is also what rejects a peace sign, which has the same
-two fingers up in the ordinary order — worth keeping, since it is the single most likely accidental
-pose in front of a webcam.
-
-Same for the incantations: `test/voice.test.mjs` checks no phrase belongs to two domains.
-
-**Tune thresholds against measured distributions, not plausibility.** *(settled)* The thumb bar was
-set to 1.12 because it looked sensible; measurement showed an extended thumb runs 1.01–1.36 under
-noise, so the bar sat inside the range it was meant to accept and silently cost a quarter of the
-frames. A folded thumb tops out near 0.82, so 0.95 sits in the empty band. When a pose matches but
-only sometimes, measure the per-check failure counts before touching anything.
 
 **The whole line is required, not half of it.** *(settled)* 領域展開 and 伏魔御廚子 are matched as
 two separate groups and both must be heard. They almost never land in one transcript — an utterance
