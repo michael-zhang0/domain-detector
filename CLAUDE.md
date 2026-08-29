@@ -77,11 +77,14 @@ servers while listening, so `VOICE_ENABLED` in `main.js` turns it off. The phras
 and exported, tested in `test/voice.test.mjs` — recognition output varies enough (kanji vs kana,
 spacing, mishearings) that the accepted forms are worth pinning down.
 
-**The whole line is required, not half of it.** *(settled)* 領域展開 and 伏魔御廚子 are matched as
-two separate groups and both must be heard. They almost never land in one transcript — an utterance
-produces several results as it firms up — so they are accumulated over a 6s window. `TriggerPairing`
-does that job here too, which is why it takes its key names as a constructor argument rather than
-hardcoding sign/voice.
+**Only 領域展開 is matched, not the domain's name.** *(settled)* Requiring both halves was built and
+then dropped: the name is the harder half to get recognised, and with one domain it disambiguates
+nothing. Saying the full line still works, since the opening is inside it.
+
+A second domain would need the name back — it would be the only thing saying *which* domain to open.
+The two-half accumulation that did that is gone from `voice.js`, but `TriggerPairing` still takes its
+key names as a constructor argument, so rebuilding it is a matter of pairing "opening" against
+"name" again rather than writing the timing logic afresh.
 
 **No on-screen text.** *(settled)* The title card and charge meter are gone; the domain art is the
 entire feedback channel. The debug panel behind `D` stays — it is a dev tool, not part of the show.

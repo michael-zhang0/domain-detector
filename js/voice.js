@@ -7,15 +7,20 @@
 // Chrome only. Firefox and Safari have no usable implementation, in which case
 // `supported` is false and the caller falls back to the gesture alone.
 
-import { TriggerPairing } from "./trigger.js";
-
 // globalThis rather than window so the phrase matcher can be imported and
 // tested outside a browser.
 const SpeechRecognition = globalThis.SpeechRecognition ?? globalThis.webkitSpeechRecognition;
 
-// The line is 領域展開・伏魔御廚子, and both halves are required. Each half has
-// several accepted spellings because recognition returns kanji, kana, or romaji
-// depending on how it hears you, and mishears predictable syllables.
+// 領域展開 on its own is the trigger. Saying the domain's name after it is
+// optional — the full line still works, since the opening is in it either way.
+//
+// Requiring the name as well was tried and dropped: it is the harder half to
+// get recognised, and with a single domain it disambiguates nothing. A second
+// domain would need it back, because then the name is the only thing saying
+// *which* domain to open.
+//
+// Several spellings per phrase because recognition returns kanji, kana, or
+// romaji depending on how it hears you, and mishears predictable syllables.
 const OPENING = [
   "領域展開",
   "りょういきてんかい",
@@ -23,19 +28,6 @@ const OPENING = [
   "ryouikitenkai",
   "ryoikitengai",
 ];
-
-const NAME = [
-  "伏魔御廚子", // the 廚 and 厨 variants of the last character both appear
-  "伏魔御厨子",
-  "ふくまみずし",
-  "fukumamizushi",
-  "fukumamizuchi",
-];
-
-// How long one half waits for the other. The full line takes a couple of
-// seconds to say and recognition trails it, so this is generous — but it is not
-// unbounded, or half a line said a minute ago would still count.
-const HALF_WINDOW_MS = 6000;
 
 /** Fold katakana to hiragana and drop everything that is not a word character. */
 export function normalise(text) {
@@ -45,22 +37,10 @@ export function normalise(text) {
     .replace(/[\s　.,!?、。・「」ー-]/g, "");
 }
 
-/**
- * Which halves of the incantation appear in one transcript.
- * @returns {{opening: boolean, name: boolean}}
- */
-export function halvesIn(transcript) {
-  const text = normalise(transcript);
-  return {
-    opening: OPENING.some((p) => text.includes(p)),
-    name: NAME.some((p) => text.includes(p)),
-  };
-}
-
-/** Whether a single transcript contains the whole line. Exported for tests. */
+/** Whether a transcript contains the incantation. Exported for tests. */
 export function matchesIncantation(transcript) {
-  const { opening, name } = halvesIn(transcript);
-  return opening && name;
+  const text = normalise(transcript);
+  return OPENING.some((p) => text.includes(p));
 }
 
 export class VoiceTrigger {
@@ -68,13 +48,9 @@ export class VoiceTrigger {
   #onMatch;
   #running = false;
   #lastFiredAt = 0;
-  // The halves often arrive in separate results — an interim for the first
-  // words, then another as the rest firms up — so they are accumulated rather
-  // than required in one transcript.
-  #heard = new TriggerPairing(HALF_WINDOW_MS, ["opening", "name"]);
 
   /**
-   * @param {() => void} onMatch  called when the whole incantation is heard
+   * @param {() => void} onMatch  called when the incantation is heard
    * @param {string} lang         recognition language; the line is Japanese
    */
   constructor(onMatch, lang = "ja-JP") {
@@ -124,19 +100,13 @@ export class VoiceTrigger {
   }
 
   #test(transcript) {
-    const now = performance.now();
-    const { opening, name } = halvesIn(transcript);
-    if (opening) this.#heard.note("opening", now);
-    if (name) this.#heard.note("name", now);
-
-    if (!this.#heard.ready(now, true)) return false;
+    if (!matchesIncantation(transcript)) return false;
 
     // Interim results repeat the same words as they firm up, so one utterance
     // would otherwise fire several times.
+    const now = performance.now();
     if (now - this.#lastFiredAt < 2500) return true;
     this.#lastFiredAt = now;
-    // Next activation has to hear the whole line again.
-    this.#heard.clear();
     this.#onMatch();
     return true;
   }
@@ -154,7 +124,6 @@ export class VoiceTrigger {
   stop() {
     if (!this.#recognition) return;
     this.#running = false;
-    this.#heard.clear();
     this.#recognition.stop();
   }
 }
